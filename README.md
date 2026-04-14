@@ -1,0 +1,102 @@
+# JewelSort
+
+A casual tap-cluster-sort puzzle prototype built in LÖVE 11.x. Source PNG
+images define the level — each opaque pixel becomes a jewel-shaped hole whose
+target color is the pixel's RGB.
+
+## Run on desktop
+
+```
+love .
+```
+
+Tested against LÖVE 11.4 on Linux. Portrait window 540x960.
+
+## Controls
+
+- **Tap / click a jewel in the grid** — lift it plus all 4-connected
+  same-color neighbors as a hovering cluster.
+- **Tap the shelf strip while hovering** — park the hovering cluster on the
+  shelf for later.
+- **Tap a shelf jewel while idle** — lift *all* same-color shelf jewels as one
+  cluster.
+- **Tap an empty hole whose target color matches the cluster** — flood-fill
+  the cluster into that hole and all 4-connected empty holes sharing the same
+  target color. Leftover jewels return to the source.
+- **Tap anywhere else while hovering** — cancel (jewels return to source).
+- **R** — reshuffle the current level.
+- **N** — cycle to the next level.
+- **Esc** — quit.
+
+## Build for web (love.js)
+
+```
+npx love.js . build/web --title "JewelSort"
+```
+
+Then serve `build/web/` over HTTP. The project has been written to work under
+Fengari/love.js: **no `goto` statements** anywhere in the source, and the
+flood-fill in `src/cluster.lua` uses an explicit iterative BFS queue (no
+recursion) because the JS stack available to Fengari is small.
+
+## Add a level
+
+Drop any RGBA PNG into `levels/`. Restart the game. Rules:
+
+- **Each opaque pixel (alpha > 0) becomes a cell.** Its RGB is the target
+  color for that cell's jewel.
+- **Alpha == 0 pixels are skipped** — use them to cut out non-rectangular
+  shapes.
+- **Use just a few distinct colors.** Clusters form only when adjacent cells
+  share an exact color, so 3–6 color palettes play best.
+- **Keep images small.** 8x8 through ~24x24 fits the 540x960 window
+  comfortably; bigger images still work but cells shrink.
+
+Two example levels ship in `levels/`:
+
+- `sample_smile.png` — 8x8, three colors.
+- `sample_heart.png` — 12x12, three colors.
+
+If you want to regenerate the samples from source, run:
+
+```
+python3 tools/make_samples.py
+```
+
+(A pure-Lua version exists at `tools/make_samples.lua` and is auto-invoked on
+first launch if `levels/` is empty, but it writes to LÖVE's save directory
+rather than the project tree, so the Python generator is recommended for
+seeding the repo.)
+
+## Win rule (design choice)
+
+**Cells-only rule.** The level is solved when every grid cell holds a jewel
+matching its target color. The shelf is *allowed to be non-empty* at the win
+moment — any extra jewels parked on the shelf are ignored.
+
+Rationale: the multiset of jewels placed at shuffle time exactly equals the
+multiset of target colors, so whenever all cells are correctly filled, the
+shelf is automatically empty anyway. Making the win condition cells-only
+simplifies the check, keeps the code robust against any future edge case
+(e.g., deliberately seeding the shelf for a harder variant), and matches the
+player's mental model: "the picture is complete."
+
+## Project layout
+
+```
+main.lua                 LÖVE entry point, input dispatch, level switching
+conf.lua                 Window + module config
+src/
+  level_loader.lua       Scans levels/*.png → level descriptors
+  level.lua              Runtime state + tap state machine
+  cluster.lua            Iterative BFS flood-fill (no recursion)
+  shuffle.lua            Fisher-Yates, not-already-solved guarantee
+  input.lua              Mouse/touch → semantic tap
+  render.lua             Draws grid, shelf, hover cluster, win overlay
+tools/
+  make_samples.lua       In-engine PNG generator (writes to save dir)
+  make_samples.py        Repo-seeding PNG generator (stdlib only)
+levels/
+  sample_smile.png
+  sample_heart.png
+```
