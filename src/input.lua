@@ -13,7 +13,9 @@ function M.classify(level, layout, sx, sy)
     -- Shelf area first (it sits below the grid area).
     local a = layout.shelf_area
     if sx >= a.x and sx <= a.x + a.w and sy >= a.y and sy <= a.y + a.h then
-        local idx = render.screen_to_shelf(layout, #level.shelf, sx, sy) or 0
+        local idx = render.screen_to_shelf(
+            layout, #level.shelf, sx, sy, level.shelf_capacity
+        ) or 0
         return { kind = "shelf", index = idx }
     end
 

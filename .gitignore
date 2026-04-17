@@ -1,0 +1,21 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Tool caches / intermediate outputs
+tools/_gen_cache/
+
+# LÖVE / love.js build outputs
+build/
+*.love
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp

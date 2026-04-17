@@ -50,15 +50,29 @@ function M.load_level_from_image_data(image_data, name)
     }
 end
 
--- List all .png files in the `levels/` directory (love.filesystem).
+-- List all .png files under `levels/`, scanning one level of subfolders.
+-- Books live as subfolders (levels/<book>/*.png); top-level PNGs still count
+-- (e.g. an orphaned WIP asset) so the "is levels/ empty?" presence check in
+-- main.lua stays accurate. Depth is intentionally capped at 1 -- the book/
+-- puzzle structure is flat two-level by design.
 function M.list_level_files()
     local out = {}
     if love == nil or love.filesystem == nil then return out end
     local items = love.filesystem.getDirectoryItems("levels") or {}
     for i = 1, #items do
-        local f = items[i]
-        if f:lower():match("%.png$") then
-            out[#out + 1] = "levels/" .. f
+        local name = items[i]
+        local path = "levels/" .. name
+        local info = love.filesystem.getInfo(path)
+        if info and info.type == "directory" then
+            local inner = love.filesystem.getDirectoryItems(path) or {}
+            for j = 1, #inner do
+                local f = inner[j]
+                if f:lower():match("%.png$") then
+                    out[#out + 1] = path .. "/" .. f
+                end
+            end
+        elseif name:lower():match("%.png$") then
+            out[#out + 1] = path
         end
     end
     table.sort(out)
@@ -82,6 +96,43 @@ function M.load_all()
         end
     end
     return levels
+end
+
+-- Load one level descriptor by its path under levels/ (e.g.
+-- "starter/smile.png"). Returns descriptor or nil on failure.
+function M.load_by_file(file)
+    if file == nil then return nil end
+    local path = file
+    if not path:match("^levels/") then
+        path = "levels/" .. path
+    end
+    if love == nil or love.filesystem == nil then return nil end
+    if not love.filesystem.getInfo(path) then return nil end
+    local ok, lvl = pcall(M.load_level_from_path, path)
+    if ok and lvl ~= nil and #lvl.cells > 0 then return lvl end
+    return nil
+end
+
+-- Render a small canvas thumbnail of a level descriptor. Each opaque cell
+-- becomes a target-color pixel block. Callers should cache the result.
+function M.render_thumbnail(desc, max_px)
+    if desc == nil or love == nil or love.graphics == nil then return nil end
+    max_px = max_px or 96
+    local cell = math.max(1, math.floor(max_px / math.max(desc.width, desc.height)))
+    local w = desc.width * cell
+    local h = desc.height * cell
+    local canvas = love.graphics.newCanvas(w, h)
+    love.graphics.push("all")
+    love.graphics.setCanvas(canvas)
+    love.graphics.clear(0, 0, 0, 0)
+    for i = 1, #desc.cells do
+        local c = desc.cells[i]
+        love.graphics.setColor(c.target[1], c.target[2], c.target[3], 1)
+        love.graphics.rectangle("fill", c.gx * cell, c.gy * cell, cell, cell)
+    end
+    love.graphics.setCanvas()
+    love.graphics.pop()
+    return canvas
 end
 
 return M

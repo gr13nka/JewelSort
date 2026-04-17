@@ -8,8 +8,8 @@ Run:
     python3 tools/make_samples.py
 
 Outputs:
-    levels/sample_smile.png   (8x8)
-    levels/sample_heart.png   (12x12)
+    levels/starter/smile.png   (8x8)
+    levels/starter/heart.png   (12x12)
 """
 import os
 import struct
@@ -18,6 +18,7 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 LEVELS = os.path.join(PROJECT, "levels")
+STARTER = os.path.join(LEVELS, "starter")
 
 
 def write_png(path, pixels, width, height):
@@ -103,10 +104,10 @@ def make_heart():
 
 
 def main():
-    os.makedirs(LEVELS, exist_ok=True)
-    for name, builder in [("sample_smile", make_smile), ("sample_heart", make_heart)]:
+    os.makedirs(STARTER, exist_ok=True)
+    for name, builder in [("smile", make_smile), ("heart", make_heart)]:
         pixels, w, h = builder()
-        path = os.path.join(LEVELS, f"{name}.png")
+        path = os.path.join(STARTER, f"{name}.png")
         write_png(path, pixels, w, h)
         print(f"wrote {path} ({w}x{h})")
 

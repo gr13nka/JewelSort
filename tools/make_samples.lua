@@ -1,7 +1,7 @@
 -- tools/make_samples.lua
 -- One-shot generator for example level PNGs. Produces:
---   levels/sample_smile.png  (8x8)
---   levels/sample_heart.png  (12x12)
+--   levels/starter/smile.png  (8x8)
+--   levels/starter/heart.png  (12x12)
 --
 -- Usage (in-game auto-run): main.lua requires this and calls .generate() when
 -- levels/ is empty.
@@ -129,9 +129,9 @@ end
 
 function M.generate()
     local smile = make_smile()
-    write_png("levels/sample_smile.png", smile)
+    write_png("levels/starter/smile.png", smile)
     local heart = make_heart()
-    write_png("levels/sample_heart.png", heart)
+    write_png("levels/starter/heart.png", heart)
 end
 
 return M

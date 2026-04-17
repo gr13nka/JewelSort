@@ -2,7 +2,6 @@
 -- Portrait window sized 540x960 (design space 1080x1920, i.e. 2x).
 function love.conf(t)
     t.identity = "jewelsort"
-    t.version = "11.4"
     t.window.title = "JewelSort"
     t.window.width = 540
     t.window.height = 960
