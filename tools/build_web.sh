@@ -25,10 +25,15 @@ zip -qr "$LOVE_TMP" \
 
 rm -rf build/web
 
-echo "build_web: running love.js..."
+echo "build_web: running love.js (compatibility mode for Yandex)..."
+# --compatibility disables the SharedArrayBuffer path. Yandex's draft
+# host doesn't send the COOP+COEP headers that modern browsers now
+# require before exposing SharedArrayBuffer, so without this flag the
+# game.js boot throws "SharedArrayBuffer is not defined" at Love(Module).
 npx --yes love.js "$LOVE_TMP" build/web \
     --title "JewelSort" \
-    --memory 67108864 >/dev/null
+    --memory 67108864 \
+    --compatibility >/dev/null
 
 echo "build_web: patching for Yandex Games..."
 ./tools/patch_web.sh
