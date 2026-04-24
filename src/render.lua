@@ -15,23 +15,37 @@ local FLASH_COLOR = { 0.80, 0.20, 0.18 }
 
 -- Fredoka One (Google Fonts, SIL OFL) — rounded warm display font that
 -- matches the cozy puzzle / Picross 3D vibe. 2.5x over LÖVE default (~13 -> 32).
--- Fredoka One has *partial* Cyrillic coverage, so for the Yandex Games
--- (Russian) target we register LÖVE's built-in default font (Vera Sans,
--- full Cyrillic) as a fallback. Missing glyphs rendered in Vera look
--- slightly more plain than the warm Latin in Fredoka, but every
--- character still shows — and Yandex moderation rejects games with
--- missing glyphs in a shipping locale.
+-- Fredoka One has *partial* Cyrillic coverage, so for the Russian locale
+-- (Yandex Games' primary market) we register an explicit full-Cyrillic
+-- fallback: Rubik-Regular (Google Fonts, SIL OFL) — same rounded
+-- humanist feel as Fredoka, so mixed runs still read as one family.
+-- An earlier version tried using LÖVE's built-in default font as the
+-- fallback, but the love.js --compatibility build for Yandex strips
+-- the default font table, so Cyrillic characters rendered invisible.
+-- Shipping our own TTF is the only reliable path.
 local FONT_PATH = "assets/fonts/FredokaOne-Regular.ttf"
+local FONT_CYR_PATH = "assets/fonts/Rubik-Regular.ttf"
 local FONT_BODY_SIZE = 32
 local FONT_SMALL_SIZE = 22
 local _font_body, _font_small
+
+-- Guard the fallback so a missing font file (dev environment without
+-- the Cyrillic asset) doesn't crash. LÖVE's getInfo tells us whether
+-- the file is readable before we ask newFont to parse it.
+local function new_cyr_fallback(size)
+    if love.filesystem == nil or love.filesystem.getInfo == nil then return nil end
+    if not love.filesystem.getInfo(FONT_CYR_PATH) then return nil end
+    local ok, f = pcall(love.graphics.newFont, FONT_CYR_PATH, size)
+    if ok then return f end
+    return nil
+end
 
 local function font_body()
     if _font_body == nil then
         _font_body = love.graphics.newFont(FONT_PATH, FONT_BODY_SIZE)
         if _font_body.setFallbacks then
-            local fallback = love.graphics.newFont(FONT_BODY_SIZE)
-            _font_body:setFallbacks(fallback)
+            local cyr = new_cyr_fallback(FONT_BODY_SIZE)
+            if cyr ~= nil then _font_body:setFallbacks(cyr) end
         end
     end
     return _font_body
@@ -41,8 +55,8 @@ local function font_small()
     if _font_small == nil then
         _font_small = love.graphics.newFont(FONT_PATH, FONT_SMALL_SIZE)
         if _font_small.setFallbacks then
-            local fallback = love.graphics.newFont(FONT_SMALL_SIZE)
-            _font_small:setFallbacks(fallback)
+            local cyr = new_cyr_fallback(FONT_SMALL_SIZE)
+            if cyr ~= nil then _font_small:setFallbacks(cyr) end
         end
     end
     return _font_small
