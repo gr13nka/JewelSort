@@ -57,6 +57,34 @@ local TUTORIAL_TRIGGER_BOX_ID = "forest"
 
 local F1_RESET_HOLD_SECONDS = 3
 
+-- 9:16 portrait is the design aspect. When the host viewport differs,
+-- we letterbox the content rect so nothing is ever clipped. Yandex
+-- Games in particular may hand us any aspect depending on frame chrome.
+local TARGET_ASPECT = 9 / 16
+
+-- Inscribed 9:16 rect inside the current window. Returns
+-- (content_w, content_h, offset_x, offset_y). All game code works
+-- inside this rect; the draw root translates by (ox, oy) and the
+-- input handlers subtract (ox, oy) from incoming coords.
+local function viewport()
+    local W = love.graphics.getWidth()
+    local H = love.graphics.getHeight()
+    if W <= 0 or H <= 0 then return W, H, 0, 0 end
+    if W / H > TARGET_ASPECT then
+        local vw = math.floor(H * TARGET_ASPECT)
+        return vw, H, math.floor((W - vw) / 2), 0
+    else
+        local vh = math.floor(W / TARGET_ASPECT)
+        return W, vh, 0, math.floor((H - vh) / 2)
+    end
+end
+
+-- Translate raw window coords into the letterboxed content space.
+local function to_content(x, y)
+    local _, _, ox, oy = viewport()
+    return x - ox, y - oy
+end
+
 -- View / zoom constants. Levels whose fit-to-board cell size falls below
 -- MIN_PLAYABLE_CELL get auto-zoomed in on start so the first tap target is
 -- always finger-sized; the player can pan (RMB drag / two-finger drag) to
@@ -145,7 +173,7 @@ local function start_puzzle(box_idx, puzzle_idx)
     local desc = game.descriptors[puzzle.id]
     if desc == nil then return end
     game.level = Level.new(desc)
-    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+    local w, h = viewport()
     -- Fresh view per puzzle. Auto-zoom kicks in when fit-to-board cells
     -- would be too small to tap comfortably.
     game.view = {
@@ -229,7 +257,7 @@ local function begin_return_flight()
         return
     end
     local award = game.celebration.award
-    local W, H = love.graphics.getWidth(), love.graphics.getHeight()
+    local W, H = viewport()
     local start_cx, start_cy = render.celebration_card_center(W, H)
 
     if award == nil or not award.first_time or award.jewels_delta <= 0 then
@@ -352,7 +380,7 @@ local function update_pending_flight(dt)
                 pf.displayed_count = pf.displayed_count + 1
                 game.counter_pulse = { t = 0, duration = COUNTER_PULSE_DURATION }
                 if game.particles then
-                    local W, H = love.graphics.getWidth(), love.graphics.getHeight()
+                    local W, H = viewport()
                     local bx, by, bw, bh = game.menu:badge_rect(W, H)
                     game.particles:spawn(bx + bw / 2, by + bh / 2, j.color, 40)
                 end
@@ -384,7 +412,8 @@ end
 
 function love.update(dt)
     if love.mouse then
-        game.mouse.x, game.mouse.y = love.mouse.getPosition()
+        local mx, my = love.mouse.getPosition()
+        game.mouse.x, game.mouse.y = to_content(mx, my)
     end
     if game.dev ~= nil then
         if game.dev.auto_win_trigger_t ~= nil then
@@ -470,7 +499,14 @@ local function draw_reset_hint(W, H)
 end
 
 function love.draw()
-    local W, H = love.graphics.getWidth(), love.graphics.getHeight()
+    local W, H, ox, oy = viewport()
+    -- Letterbox any host viewport that isn't already 9:16: fill with
+    -- black, then translate into the inscribed content rect.
+    if ox > 0 or oy > 0 then
+        love.graphics.clear(0, 0, 0)
+    end
+    love.graphics.push()
+    love.graphics.translate(ox, oy)
     if game.mode == "menu" then
         if #game.boxes == 0 then
             love.graphics.clear(0.1, 0.1, 0.13)
@@ -517,15 +553,14 @@ function love.draw()
         end
     end
     draw_reset_hint(W, H)
+    love.graphics.pop()
 end
 
 -- Press-inside-button sets celebration.button_pressed; only armed once
 -- celebration has reached its tappable phase.
 local function try_press_complete_button(sx, sy)
     if not celebration_button_active() then return false end
-    local bx, by, bw, bh = render.celebration_button_rect(
-        love.graphics.getWidth(), love.graphics.getHeight()
-    )
+    local bx, by, bw, bh = render.celebration_button_rect(viewport())
     if sx >= bx and sx <= bx + bw and sy >= by and sy <= by + bh then
         game.celebration.button_pressed = true
         return true
@@ -540,9 +575,7 @@ local function try_release_complete_button(sx, sy)
         return false
     end
     game.celebration.button_pressed = false
-    local bx, by, bw, bh = render.celebration_button_rect(
-        love.graphics.getWidth(), love.graphics.getHeight()
-    )
+    local bx, by, bw, bh = render.celebration_button_rect(viewport())
     if sx >= bx and sx <= bx + bw and sy >= by and sy <= by + bh then
         begin_return_flight()
         return true
@@ -567,7 +600,8 @@ end
 
 local function handle_press(sx, sy)
     if game.mode == "menu" then
-        game.menu:handle_tap(sx, sy, love.graphics.getWidth(), love.graphics.getHeight())
+        local W, H = viewport()
+        game.menu:handle_tap(sx, sy, W, H)
         return
     end
     -- Playing mode.
@@ -603,7 +637,8 @@ end
 
 local function handle_release(sx, sy)
     if game.mode == "menu" then
-        game.menu:handle_release(sx, sy, love.graphics.getWidth(), love.graphics.getHeight())
+        local W, H = viewport()
+        game.menu:handle_release(sx, sy, W, H)
         if game.menu.play_pending ~= nil then
             local pending = game.menu.play_pending
             game.menu.play_pending = nil
@@ -638,6 +673,7 @@ local function maybe_start_lmb_pan(x, y)
 end
 
 function love.mousepressed(x, y, button)
+    x, y = to_content(x, y)
     if button == 2 then
         -- RMB starts a pan drag on the puzzle screen. Swallowed on the
         -- menu so right-clicks never fire selection/back-button presses.
@@ -652,6 +688,7 @@ function love.mousepressed(x, y, button)
 end
 
 function love.mousereleased(x, y, button)
+    x, y = to_content(x, y)
     if button == 2 then
         if game.view ~= nil then
             game.view.rmb_drag = nil
@@ -669,6 +706,7 @@ function love.mousereleased(x, y, button)
 end
 
 function love.mousemoved(x, y, _dx, _dy)
+    x, y = to_content(x, y)
     if game.mode ~= "playing" or game.view == nil then return end
     -- Integrate against our own last-position so pan tracks cleanly even
     -- if love's dx/dy is frame-batched differently than events. Both LMB
@@ -687,6 +725,7 @@ function love.wheelmoved(_dx, dy)
     if game.mode ~= "playing" or game.view == nil or game.layout == nil then return end
     local factor = 1 + dy * WHEEL_ZOOM_STEP
     local mx, my = love.mouse.getPosition()
+    mx, my = to_content(mx, my)
     zoom_view_at(game.view, game.layout, mx, my, factor)
 end
 
@@ -713,6 +752,7 @@ local function two_touch_centroid()
 end
 
 function love.touchpressed(id, x, y)
+    x, y = to_content(x, y)
     if game.mode == "playing" and game.view ~= nil then
         game.view.touches[id] = { x = x, y = y }
         if count_touches() >= 2 then
@@ -728,6 +768,7 @@ function love.touchpressed(id, x, y)
 end
 
 function love.touchmoved(id, x, y, _dx, _dy)
+    x, y = to_content(x, y)
     if game.mode ~= "playing" or game.view == nil then return end
     local t = game.view.touches[id]
     if t == nil then return end
@@ -747,6 +788,7 @@ function love.touchmoved(id, x, y, _dx, _dy)
 end
 
 function love.touchreleased(id, x, y)
+    x, y = to_content(x, y)
     if game.mode == "playing" and game.view ~= nil then
         local was_gesture = game.view.gesture ~= nil
         if game.view.touches[id] ~= nil then
