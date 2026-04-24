@@ -36,6 +36,53 @@ end
 local function use_body() love.graphics.setFont(font_body()) end
 local function use_small() love.graphics.setFont(font_small()) end
 
+-- Octagonal bevelled slot tile. Cream-colored art; tinted at draw time
+-- with setColor(target * SLOT_TINT) so each cell's slot reads as a
+-- darkened version of its target color.
+local SLOT_IMAGE_PATH = "assets/jewel_slot_8edges.png"
+local _slot_img
+local function slot_image()
+    if _slot_img == nil then
+        _slot_img = love.graphics.newImage(SLOT_IMAGE_PATH)
+        _slot_img:setFilter("linear", "linear")
+    end
+    return _slot_img
+end
+
+-- Grey faceted octagonal gem. Tinted at draw time with setColor(jewel_color)
+-- so every jewel on screen is this single asset multiplied by its color.
+local JEWEL_IMAGE_PATH = "assets/Jewel_8edges.png"
+local _jewel_img
+local function jewel_image()
+    if _jewel_img == nil then
+        _jewel_img = love.graphics.newImage(JEWEL_IMAGE_PATH)
+        _jewel_img:setFilter("linear", "linear")
+    end
+    return _jewel_img
+end
+
+-- Visible gem occupies ~85% of the asset frame (rest is soft shadow halo).
+-- Callers pass a desired gem_diameter and the helper scales the asset so
+-- the gem matches that diameter; the halo naturally extends past it.
+local JEWEL_GEM_FRAC = 0.85
+
+local function draw_jewel_asset(cx, cy, gem_diameter, color, lifted)
+    local img = jewel_image()
+    local iw, ih = img:getDimensions()
+    local footprint = gem_diameter / JEWEL_GEM_FRAC
+    local sx = footprint / iw
+    local sy = footprint / ih
+    local dx = cx - footprint / 2
+    local dy = cy - footprint / 2
+    if lifted then
+        love.graphics.setColor(0, 0, 0, 0.4)
+        love.graphics.draw(img, dx + 2, dy + 8, 0, sx, sy)
+    end
+    love.graphics.setColor(color[1], color[2], color[3], 1)
+    love.graphics.draw(img, dx, dy, 0, sx, sy)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 local MEDAL_COLORS = {
     bronze = { 0.80, 0.50, 0.20 },
     silver = { 0.80, 0.82, 0.86 },
@@ -77,10 +124,15 @@ local CEL_BTN_H    = 64
 local CEL_BTN_BOT  = 20  -- button bottom padding inside card
 
 -- Compute layout rects for the current window + level.
+-- `view` (optional) carries zoom + pan offsets so large levels can scale up
+-- past fit-to-board. { zoom = 1, pan_x = 0, pan_y = 0 } is the "fit centered"
+-- baseline. Pan is clamped here (and written back to the view) so the grid
+-- never drifts past `grid_area` edges when it overflows.
 -- Returns a table with:
 --   grid_area, shelf_area, progress_area, back_button_rect,
---   cell_size, origin_x, origin_y, cols, rows
-function M.compute_layout(level, win_w, win_h)
+--   cell_size, fit_cell, origin_x, origin_y, cols, rows,
+--   grid_pixel_w, grid_pixel_h
+function M.compute_layout(level, win_w, win_h, view)
     local margin = 16
     -- Top header band holds the in-puzzle back button.
     local back_button_w = 110
@@ -117,25 +169,64 @@ function M.compute_layout(level, win_w, win_h)
         w = back_button_w,
         h = back_button_h,
     }
+    -- Persistent "controls" hint plaque in the top-right of the header
+    -- band. Mirrors the back button's height so both sit on the same line.
+    local hint_button_w = 110
+    local hint_button_rect = {
+        x = win_w - margin - hint_button_w,
+        y = margin,
+        w = hint_button_w,
+        h = back_button_h,
+    }
     local cols = level.width
     local rows = level.height
     local cell_w = grid_area.w / cols
     local cell_h = grid_area.h / rows
-    local cell_size = math.floor(math.min(cell_w, cell_h))
+    local fit_cell = math.max(1, math.floor(math.min(cell_w, cell_h)))
+    local zoom = (view and view.zoom) or 1
+    local cell_size = math.max(1, math.floor(fit_cell * zoom))
     local grid_pixel_w = cell_size * cols
     local grid_pixel_h = cell_size * rows
-    local origin_x = grid_area.x + math.floor((grid_area.w - grid_pixel_w) / 2)
-    local origin_y = grid_area.y + math.floor((grid_area.h - grid_pixel_h) / 2)
+    local fit_ox = grid_area.x + math.floor((grid_area.w - grid_pixel_w) / 2)
+    local fit_oy = grid_area.y + math.floor((grid_area.h - grid_pixel_h) / 2)
+
+    local pan_x = (view and view.pan_x) or 0
+    local pan_y = (view and view.pan_y) or 0
+    if grid_pixel_w <= grid_area.w then
+        pan_x = 0
+    else
+        local over = (grid_pixel_w - grid_area.w) / 2
+        if pan_x < -over then pan_x = -over end
+        if pan_x >  over then pan_x =  over end
+    end
+    if grid_pixel_h <= grid_area.h then
+        pan_y = 0
+    else
+        local over = (grid_pixel_h - grid_area.h) / 2
+        if pan_y < -over then pan_y = -over end
+        if pan_y >  over then pan_y =  over end
+    end
+    if view ~= nil then
+        view.pan_x = pan_x
+        view.pan_y = pan_y
+    end
+
+    local origin_x = fit_ox + math.floor(pan_x)
+    local origin_y = fit_oy + math.floor(pan_y)
     return {
         grid_area = grid_area,
         shelf_area = shelf_area,
         progress_area = progress_area,
         back_button_rect = back_button_rect,
+        hint_button_rect = hint_button_rect,
         cell_size = cell_size,
+        fit_cell = fit_cell,
         origin_x = origin_x,
         origin_y = origin_y,
         cols = cols,
         rows = rows,
+        grid_pixel_w = grid_pixel_w,
+        grid_pixel_h = grid_pixel_h,
     }
 end
 
@@ -149,12 +240,19 @@ function M.screen_to_grid(layout, sx, sy)
     return gx, gy
 end
 
--- Shelf layout: 2 rows × 6 columns, capacity 12 total.
-local SHELF_COLS = 6
-local SHELF_ROWS = 2
+-- Pixel center of grid cell (gx, gy) under the current layout.
+function M.grid_cell_pixel(layout, gx, gy)
+    local s = layout.cell_size
+    return layout.origin_x + gx * s + s / 2,
+        layout.origin_y + gy * s + s / 2
+end
+
+-- Shelf layout: 3 rows × 8 columns, capacity 24 total.
+local SHELF_COLS = 8
+local SHELF_ROWS = 3
 
 -- Pixel edge length of one shelf slot. Derived from the shelf area so
--- the 12 slots always fit as a 2×6 grid with ~10% vertical padding.
+-- the 24 slots always fit as a 3×8 grid with ~10% vertical padding.
 local function shelf_slot_size(area)
     local slot = math.min(
         math.floor(area.w / SHELF_COLS),
@@ -164,7 +262,7 @@ local function shelf_slot_size(area)
 end
 
 -- Return pixel center (cx, cy) and slot edge for shelf slot `index` (1-based).
--- Fills left-to-right, top-to-bottom: 1..6 top row, 7..12 bottom row.
+-- Fills left-to-right, top-to-bottom: 1..8 top row, 9..16 middle, 17..24 bottom.
 local function shelf_slot_center(area, index)
     local i = index - 1
     local col = i % SHELF_COLS
@@ -177,8 +275,16 @@ local function shelf_slot_center(area, index)
     return ox + (col + 0.5) * slot, oy + (row + 0.5) * slot, slot
 end
 
+-- Pixel center of shelf slot `index` (1-based) under the current layout.
+-- Module-level wrapper so level.lua can resolve shelf origins to pixels
+-- when sorting cluster flights by distance from the player's tap.
+function M.shelf_slot_pixel(layout, index)
+    local cx, cy = shelf_slot_center(layout.shelf_area, index)
+    return cx, cy
+end
+
 -- Screen coords -> shelf index (1..N) or nil.
--- Taps inside the shelf area but outside the 2×6 slot grid (or past the
+-- Taps inside the shelf area but outside the 3×8 slot grid (or past the
 -- current shelf_len) resolve to 0 meaning "empty shelf region".
 function M.screen_to_shelf(layout, shelf_len, sx, sy, _capacity)
     local a = layout.shelf_area
@@ -205,79 +311,57 @@ local function draw_desk(win_w, win_h)
     wood.draw_panel("desk", 0, 0, win_w, win_h)
 end
 
--- Each cell is a painted target-color ring around a recessed dark hole,
--- sitting on the wooden board. The ring IS the color cue — the player
--- needs to see which color goes where, so this can't be wooden.
+-- Each cell is a target-color rounded square with an octagonal bevelled
+-- slot tinted to a darkened version of the same color. The square IS
+-- the color cue; the slot advertises where the jewel sits.
+local SLOT_TINT = 0.35
+local CELL_CORNER = 0.08
 local function draw_cell(x, y, size, jewel_color, hovering, target_color)
     local cx = x + size / 2
     local cy = y + size / 2
-    local ring_r = size * 0.46
-    local hole_r = size * 0.36
+    local corner = size * CELL_CORNER
 
+    -- Drop shadow beneath the tile.
     love.graphics.setColor(0, 0, 0, 0.25)
-    love.graphics.circle("fill", cx, cy + 2, ring_r)
+    love.graphics.rectangle("fill", x, y + 2, size, size, corner, corner)
 
-    -- Painted target-color ring.
+    -- Target-color square background.
     if target_color ~= nil then
         love.graphics.setColor(target_color[1], target_color[2], target_color[3], 1)
     else
         love.graphics.setColor(P.plaque)
     end
-    love.graphics.circle("fill", cx, cy, ring_r)
-    -- Subtle top-edge highlight + bottom shade on the painted ring.
-    love.graphics.setLineWidth(1.5)
-    love.graphics.setColor(1, 1, 1, 0.28)
-    love.graphics.arc("line", "open", cx, cy, ring_r - 1, math.pi * 1.1, math.pi * 1.9)
-    love.graphics.setColor(0, 0, 0, 0.28)
-    love.graphics.arc("line", "open", cx, cy, ring_r - 1, math.pi * 0.1, math.pi * 0.9)
+    love.graphics.rectangle("fill", x, y, size, size, corner, corner)
 
-    -- Recessed dark hole inside the ring.
-    love.graphics.setColor(P.walnut_dark[1], P.walnut_dark[2], P.walnut_dark[3], 1)
-    love.graphics.circle("fill", cx, cy, hole_r)
-    love.graphics.setColor(0, 0, 0, 0.30)
-    love.graphics.arc("fill", cx, cy - hole_r * 0.15, hole_r * 0.95,
-                      math.pi * 0.85, math.pi * 2.15)
+    -- Octagonal slot tinted to a darkened target color.
+    local tr, tg, tb
+    if target_color ~= nil then
+        tr, tg, tb = target_color[1], target_color[2], target_color[3]
+    else
+        tr, tg, tb = P.plaque[1], P.plaque[2], P.plaque[3]
+    end
+    love.graphics.setColor(tr * SLOT_TINT, tg * SLOT_TINT, tb * SLOT_TINT, 1)
+    local img = slot_image()
+    local iw, ih = img:getDimensions()
+    love.graphics.draw(img, x, y, 0, size / iw, size / ih)
+    love.graphics.setColor(1, 1, 1, 1)
 
     if jewel_color ~= nil and not hovering then
-        love.graphics.setColor(jewel_color[1], jewel_color[2], jewel_color[3], 1)
-        love.graphics.circle("fill", cx, cy, size * 0.34)
-        love.graphics.setColor(1, 1, 1, 0.25)
-        love.graphics.circle(
-            "fill",
-            cx - size * 0.08,
-            cy - size * 0.10,
-            size * 0.10
-        )
+        draw_jewel_asset(cx, cy, size * 0.68, jewel_color, false)
     end
 end
 
--- Draw just the jewel circle (+ highlight) inside a cell, at a scale
--- factor around the cell center. Used for cascade stomp pulse.
+-- Draw just the jewel asset inside a cell, at a scale factor around the
+-- cell center. Used for cascade stomp pulse.
 local function draw_cell_jewel_scaled(x, y, size, color, scale)
     scale = scale or 1
     local cx = x + size / 2
     local cy = y + size / 2
-    local r = size * 0.34 * scale
-    love.graphics.setColor(color[1], color[2], color[3], 1)
-    love.graphics.circle("fill", cx, cy, r)
-    love.graphics.setColor(1, 1, 1, 0.25)
-    love.graphics.circle(
-        "fill",
-        cx - size * 0.08 * scale,
-        cy - size * 0.10 * scale,
-        size * 0.10 * scale
-    )
+    draw_jewel_asset(cx, cy, size * 0.68 * scale, color, false)
 end
 
 local function draw_jewel(cx, cy, radius, color, lifted)
-    if lifted then
-        love.graphics.setColor(0, 0, 0, 0.4)
-        love.graphics.circle("fill", cx + 2, cy + 8, radius)
-    end
-    love.graphics.setColor(color[1], color[2], color[3], 1)
-    love.graphics.circle("fill", cx, cy, radius)
-    love.graphics.setColor(1, 1, 1, 0.25)
-    love.graphics.circle("fill", cx - radius * 0.25, cy - radius * 0.3, radius * 0.3)
+    draw_jewel_asset(cx, cy, radius * 2, color, lifted)
 end
 
 -- Text with a soft darker "engraved" shadow underneath.
@@ -287,6 +371,75 @@ local function print_engraved(text, x, y, w, align, ink, shadow_alpha)
     love.graphics.printf(text, x, y + 1, w, align)
     love.graphics.setColor(ink[1], ink[2], ink[3], 1)
     love.graphics.printf(text, x, y, w, align)
+end
+
+-- Small engraved pictograms for the zoom/pan controls hint. `size` is
+-- the overall icon footprint in pixels; `ink` is the fill color (usually
+-- P.ink_light on a dark plaque, P.ink on parchment).
+local function draw_wheel_icon(cx, cy, size, ink)
+    ink = ink or P.ink_light
+    local mouse_w = math.floor(size * 0.55)
+    local mouse_h = math.floor(size * 0.85)
+    local x = cx - mouse_w / 2
+    local y = cy - mouse_h / 2
+    -- Shadow.
+    love.graphics.setColor(0, 0, 0, 0.30)
+    love.graphics.rectangle("fill", x, y + 1, mouse_w, mouse_h, mouse_w / 2, mouse_w / 2)
+    -- Mouse silhouette.
+    love.graphics.setColor(ink[1], ink[2], ink[3], 1)
+    love.graphics.rectangle("fill", x, y, mouse_w, mouse_h, mouse_w / 2, mouse_w / 2)
+    -- Scroll wheel — small foil capsule near the top.
+    local ww = math.max(2, math.floor(size * 0.10))
+    local wh = math.max(3, math.floor(size * 0.20))
+    local wx = cx - ww / 2
+    local wy = y + math.floor(size * 0.12)
+    love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 1)
+    love.graphics.rectangle("fill", wx, wy, ww, wh, ww / 2, ww / 2)
+    -- Up/down arrows flanking the wheel to read "scroll".
+    local ah = math.max(3, math.floor(size * 0.18))
+    local aw = math.max(3, math.floor(size * 0.16))
+    love.graphics.setColor(ink[1], ink[2], ink[3], 0.95)
+    love.graphics.polygon("fill",
+        cx,             y - ah - 2,
+        cx - aw / 2,    y - 2,
+        cx + aw / 2,    y - 2)
+    love.graphics.polygon("fill",
+        cx,             y + mouse_h + ah + 2,
+        cx - aw / 2,    y + mouse_h + 2,
+        cx + aw / 2,    y + mouse_h + 2)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+local function draw_hand_icon(cx, cy, size, ink)
+    -- Four-way arrow cross reads as "drag / pan in any direction".
+    ink = ink or P.ink_light
+    local arm = math.floor(size * 0.40)
+    local thick = math.max(2, math.floor(size * 0.10))
+    local head = math.max(4, math.floor(size * 0.18))
+    local function cross(ox, oy, r, g, b, a)
+        love.graphics.setColor(r, g, b, a)
+        love.graphics.rectangle("fill", cx - arm + ox, cy - thick / 2 + oy, arm * 2, thick)
+        love.graphics.rectangle("fill", cx - thick / 2 + ox, cy - arm + oy, thick, arm * 2)
+        love.graphics.polygon("fill",
+            cx - arm - head + ox, cy + oy,
+            cx - arm + ox,        cy - head + oy,
+            cx - arm + ox,        cy + head + oy)
+        love.graphics.polygon("fill",
+            cx + arm + head + ox, cy + oy,
+            cx + arm + ox,        cy - head + oy,
+            cx + arm + ox,        cy + head + oy)
+        love.graphics.polygon("fill",
+            cx + ox,              cy - arm - head + oy,
+            cx - head + ox,       cy - arm + oy,
+            cx + head + ox,       cy - arm + oy)
+        love.graphics.polygon("fill",
+            cx + ox,              cy + arm + head + oy,
+            cx - head + ox,       cy + arm + oy,
+            cx + head + ox,       cy + arm + oy)
+    end
+    cross(0, 1, 0, 0, 0, 0.30)
+    cross(0, 0, ink[1], ink[2], ink[3], 1)
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- Wrap a draw block in a uniform scale around (cx, cy). Caller must
@@ -309,6 +462,13 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
 
     local origin_x, origin_y = layout.origin_x, layout.origin_y
     local size = layout.cell_size
+
+    -- Clip grid-area drawing so that a zoomed-in grid doesn't bleed out
+    -- over the back-button header or the shelf below it. The board panel
+    -- was drawn at the full `ga` rect above, so clipping here only affects
+    -- cells, jewels, hover sprites, and fly animations. Scissor is cleared
+    -- before shelf / progress / flash / celebration draws below.
+    love.graphics.setScissor(ga.x, ga.y, ga.w, ga.h)
 
     local hovering_cells = {}
     if level.state.kind == "hovering" and level.state.source == "grid" then
@@ -344,6 +504,9 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
             draw_cell_jewel_scaled(x, y, size, c.jewel, scale)
         end
     end
+
+    -- Release the grid-area scissor before chrome outside the grid draws.
+    love.graphics.setScissor()
 
     -- Shelf: recessed walnut tray with slot outlines.
     local s = layout.shelf_area
@@ -452,23 +615,11 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
         end
     end
 
-    -- Fly animation: every placement. Travel phase follows a smoothstep
-    -- arc, then a brief landing squash + expanding ring flash + glitter
-    -- burst before the jewel settles into the cell.
+    -- Fly animation: every placement. Each jewel runs on its own clock
+    -- (pa.t - f.t0) so deposits cascade outward from the tap. Before its
+    -- t0, a jewel waits at its source in the lifted pose; then it arcs
+    -- (smoothstep) and lands with a squash + ring flash + glitter burst.
     if pa ~= nil then
-        local travel_t = math.min(pa.t, Level.FLY_DURATION)
-        local u = travel_t / Level.FLY_DURATION
-        -- Smoothstep eases both ends for a more natural toss.
-        local eu = u * u * (3 - 2 * u)
-        local landing_scale = 1
-        local pt = 0
-        local landing = false
-        if pa.t > Level.FLY_DURATION then
-            landing = true
-            pt = (pa.t - Level.FLY_DURATION) / Level.LANDING_PULSE
-            if pt < 0 then pt = 0 elseif pt > 1 then pt = 1 end
-            landing_scale = 1 + (Level.STOMP_PEAK - 1) * math.sin(math.pi * pt)
-        end
         local base_r = size * 0.34
         local lift = math.floor(size * 0.18)
         local arc_h = size * Level.FLY_ARC_HEIGHT
@@ -493,41 +644,61 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
                 tx = origin_x + f.to.gx * size + size / 2
                 ty = origin_y + f.to.gy * size + size / 2
             end
-            local cx = fx + (tx - fx) * eu
-            local cy2 = fy + (ty - fy) * eu
-            cy2 = cy2 - arc_h * math.sin(math.pi * u)
-            -- Squash+stretch during travel: slightly narrower/taller at
-            -- apex. Not visible on a circle, but tweaks the radius to
-            -- hint at speed — a touch bigger in mid-flight.
-            local travel_scale = 1 + 0.06 * math.sin(math.pi * u)
-            local r2 = math.floor(base_r * landing_scale * travel_scale)
 
-            -- Landing ring flash at the target cell.
-            if landing then
-                local ring_r = base_r * (1 + pt * 1.35)
-                local ring_a = (1 - pt) * 0.7
-                love.graphics.setLineWidth(2)
-                love.graphics.setColor(f.color[1], f.color[2], f.color[3], ring_a)
-                love.graphics.circle("line", tx, ty, ring_r)
-                love.graphics.setColor(1, 1, 1, ring_a * 0.55)
-                love.graphics.circle("line", tx, ty, ring_r * 0.75)
-            end
+            local local_t = pa.t - (f.t0 or 0)
+            if local_t < 0 then
+                -- Not launched yet: sit at the source in the lifted pose.
+                draw_jewel(fx, fy, base_r, f.color, true)
+            else
+                local travel_t = math.min(local_t, Level.FLY_DURATION)
+                local u = travel_t / Level.FLY_DURATION
+                -- Smoothstep eases both ends for a more natural toss.
+                local eu = u * u * (3 - 2 * u)
+                local landing_scale = 1
+                local pt = 0
+                local landing = false
+                if local_t > Level.FLY_DURATION then
+                    landing = true
+                    pt = (local_t - Level.FLY_DURATION) / Level.LANDING_PULSE
+                    if pt < 0 then pt = 0 elseif pt > 1 then pt = 1 end
+                    landing_scale = 1 + (Level.STOMP_PEAK - 1) * math.sin(math.pi * pt)
+                end
+                local cx = fx + (tx - fx) * eu
+                local cy2 = fy + (ty - fy) * eu
+                cy2 = cy2 - arc_h * math.sin(math.pi * u)
+                -- Squash+stretch during travel: slightly narrower/taller at
+                -- apex. Not visible on a circle, but tweaks the radius to
+                -- hint at speed — a touch bigger in mid-flight.
+                local travel_scale = 1 + 0.06 * math.sin(math.pi * u)
+                local r2 = math.floor(base_r * landing_scale * travel_scale)
 
-            draw_jewel(cx, cy2, r2, f.color, true)
+                -- Landing ring flash at the target cell.
+                if landing then
+                    local ring_r = base_r * (1 + pt * 1.35)
+                    local ring_a = (1 - pt) * 0.7
+                    love.graphics.setLineWidth(2)
+                    love.graphics.setColor(f.color[1], f.color[2], f.color[3], ring_a)
+                    love.graphics.circle("line", tx, ty, ring_r)
+                    love.graphics.setColor(1, 1, 1, ring_a * 0.55)
+                    love.graphics.circle("line", tx, ty, ring_r * 0.75)
+                end
 
-            if particles ~= nil then
-                -- Trail: spawn ~90 sparkles/sec per jewel during travel.
-                if not landing then
-                    local rate = 90
-                    local n = math.floor(rate * dt + math.random())
-                    if n > 0 then
-                        particles:spawn(cx, cy2, f.color, n)
-                    end
-                else
-                    -- Burst concentrated in the first frames of landing.
-                    local burst = math.floor(240 * (1 - pt) * dt + math.random())
-                    if burst > 0 then
-                        particles:spawn(tx, ty, f.color, burst)
+                draw_jewel(cx, cy2, r2, f.color, true)
+
+                if particles ~= nil then
+                    -- Trail: spawn ~90 sparkles/sec per jewel during travel.
+                    if not landing then
+                        local rate = 90
+                        local nparts = math.floor(rate * dt + math.random())
+                        if nparts > 0 then
+                            particles:spawn(cx, cy2, f.color, nparts)
+                        end
+                    else
+                        -- Burst concentrated in the first frames of landing.
+                        local burst = math.floor(240 * (1 - pt) * dt + math.random())
+                        if burst > 0 then
+                            particles:spawn(tx, ty, f.color, burst)
+                        end
                     end
                 end
             end
@@ -553,6 +724,115 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
         print_engraved("< Back", b.x, ly, b.w, "center", P.ink_light, 0.4)
         use_body()
     end
+
+    -- Persistent controls hint (top-right header band). Tapping it
+    -- reopens the zoom/pan tutorial; hit-test lives in main.lua.
+    local hb = layout.hint_button_rect
+    if hb ~= nil then
+        wood.draw_panel("plaque", hb.x, hb.y, hb.w, hb.h, 8)
+        love.graphics.setColor(P.ink[1], P.ink[2], P.ink[3], 0.45)
+        love.graphics.setLineWidth(1)
+        love.graphics.rectangle("line", hb.x + 0.5, hb.y + 0.5, hb.w - 1, hb.h - 1, 8, 8)
+        -- Three engraved glyphs evenly spaced: wheel, hand, "?".
+        local slot_w = hb.w / 3
+        local cy = hb.y + hb.h / 2
+        local icon_size = math.min(hb.h - 12, 22)
+        draw_wheel_icon(hb.x + slot_w * 0.5, cy, icon_size)
+        draw_hand_icon(hb.x + slot_w * 1.5, cy, icon_size)
+        use_small()
+        local fh = love.graphics.getFont():getHeight()
+        local qx = hb.x + slot_w * 2
+        local qy = cy - fh / 2 - 1
+        print_engraved("?", qx, qy, slot_w, "center", P.ink_light, 0.4)
+        use_body()
+    end
+end
+
+-- --- Zoom/pan tutorial overlay -------------------------------------------
+-- Simple one-page primer shown the first time a player enters a Forest
+-- puzzle. Tapping anywhere on the overlay dismisses it.
+
+local TUT_PW_MAX = 420
+local TUT_PW_PAD = 60
+local TUT_PH     = 340
+local TUT_BTN_W  = 200
+local TUT_BTN_H  = 64
+local TUT_BTN_BOT = 24
+
+local function tutorial_card_rect(W, H)
+    local pw = math.min(W - TUT_PW_PAD, TUT_PW_MAX)
+    local ph = TUT_PH
+    local px = math.floor((W - pw) / 2)
+    local py = math.floor((H - ph) / 2 - 20)
+    return px, py, pw, ph
+end
+
+-- Public: rect of the "Got it" button on the tutorial card.
+function M.tutorial_dismiss_rect(W, H)
+    local px, py, pw, ph = tutorial_card_rect(W, H)
+    local bw = TUT_BTN_W
+    local bh = TUT_BTN_H
+    local bx = px + math.floor((pw - bw) / 2)
+    local by = py + ph - bh - TUT_BTN_BOT
+    return bx, by, bw, bh
+end
+
+function M.draw_tutorial_overlay(tutorial, W, H)
+    if tutorial == nil or not tutorial.active then return end
+
+    -- Scrim.
+    love.graphics.setColor(0, 0, 0, 0.60)
+    love.graphics.rectangle("fill", 0, 0, W, H)
+
+    -- Parchment card.
+    local px, py, pw, ph = tutorial_card_rect(W, H)
+    love.graphics.setColor(1, 1, 1, 1)
+    wood.draw_panel("parchment", px, py, pw, ph, 14)
+    love.graphics.setColor(P.ink[1], P.ink[2], P.ink[3], 0.35)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", px + 1, py + 1, pw - 2, ph - 2, 14, 14)
+
+    -- Title.
+    use_body()
+    local title_fh = love.graphics.getFont():getHeight()
+    print_engraved("Zoom & Pan", px, py + 22, pw, "center", P.ink, 0.4)
+
+    -- Two icon rows. Each row: icon on the left, caption to its right.
+    use_small()
+    local small_fh = love.graphics.getFont():getHeight()
+    local row_y1 = py + 22 + title_fh + 28
+    local row_y2 = row_y1 + 72
+    local icon_cx = px + 56
+    local icon_size = 40
+    local text_x = px + 96
+    local text_w = pw - (text_x - px) - 20
+
+    draw_wheel_icon(icon_cx, row_y1 + 20, icon_size, P.ink)
+    print_engraved("Scroll wheel  -  zoom in/out",
+        text_x, row_y1 + 20 - small_fh / 2, text_w, "left", P.ink, 0.35)
+
+    draw_hand_icon(icon_cx, row_y2 + 20, icon_size, P.ink)
+    print_engraved("Drag background  -  pan",
+        text_x, row_y2 + 20 - small_fh / 2, text_w, "left", P.ink, 0.35)
+
+    -- "Got it" button — same style as Complete.
+    local bx, by, bw, bh = M.tutorial_dismiss_rect(W, H)
+    wood.draw_panel("plaque", bx, by, bw, bh, 10)
+    love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 0.9)
+    love.graphics.rectangle("fill", bx + 10, by + 8, bw - 20, 3)
+    love.graphics.rectangle("fill", bx + 10, by + bh - 11, bw - 20, 3)
+    love.graphics.setColor(0, 0, 0, 0.45)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", bx + 1, by + 1, bw - 2, bh - 2, 10, 10)
+    use_body()
+    local btn_fh = love.graphics.getFont():getHeight()
+    local btn_ly = by + math.floor((bh - btn_fh) / 2) - 1
+    love.graphics.setColor(0, 0, 0, 0.4)
+    love.graphics.printf("Got it", bx, btn_ly + 1, bw, "center")
+    love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 1)
+    love.graphics.printf("Got it", bx, btn_ly, bw, "center")
+    use_body()
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- --- Celebration + Complete button ---------------------------------------

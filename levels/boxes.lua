@@ -27,12 +27,33 @@ return {
             { id = "starter/heart", file = "starter/heart.png", tier = "silver" },
         },
     },
+    {
+        id = "forest",
+        title = "Forest Harvest",
+        jewel_cost = 3,
+        puzzles = {
+            { id = "forest/blueberry", file = "Forest/Blueberry.png", tier = "silver" },
+            { id = "forest/cherry",    file = "Forest/Cherry.png",    tier = "silver" },
+        },
+    },
+    {
+        id = "animals",
+        title = "Forest Friends",
+        jewel_cost = 7,
+        puzzles = {
+            { id = "animals/rabbit", file = "Animals/pixellab-Game-icon--Rabbit-face--plain--1776426371171.png", tier = "bronze" },
+            { id = "animals/fox",    file = "Animals/pixellab-Game-icon--Fox-face--plain--fl-1776426331654.png",  tier = "silver" },
+            { id = "animals/deer",   file = "Animals/pixellab-Game-icon--Deer-face--plain--f-1776426428099.png",  tier = "silver" },
+            { id = "animals/bear",   file = "Animals/pixellab-Game-icon--Bear-face--plain--f-1776426299327.png",  tier = "gold"   },
+            { id = "animals/wolf",   file = "Animals/pixellab-Game-icon--Wolf-face--plain--f-1776426260412.png",  tier = "gold"   },
+        },
+    },
     -- Example locked box (no PNGs yet). Safe to leave in: the menu shows it
     -- as locked until enough jewels are earned; selecting it does nothing.
     {
         id = "shapes",
         title = "Shapes & Symbols",
-        jewel_cost = 3,
+        jewel_cost = 20,
         puzzles = {
             -- Add puzzles here as you author more PNGs, e.g.:
             -- { id = "shapes/star", file = "shapes/star.png", tier = "gold" },

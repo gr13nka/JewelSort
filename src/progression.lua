@@ -24,7 +24,8 @@ end
 local function fresh_state()
     return {
         jewels = 0,
-        completed = {}, -- [puzzle_id] = tier string (medal already earned)
+        completed = {},    -- [puzzle_id] = tier string (medal already earned)
+        tutorial_seen = {}, -- [tutorial_key] = true, once the overlay has been dismissed
     }
 end
 
@@ -51,6 +52,13 @@ local function sanitize(loaded)
             end
         end
     end
+    if type(loaded.tutorial_seen) == "table" then
+        for k, v in pairs(loaded.tutorial_seen) do
+            if type(k) == "string" and v == true then
+                s.tutorial_seen[k] = true
+            end
+        end
+    end
     return s
 end
 
@@ -73,7 +81,19 @@ end
 function M.reset(state)
     state.jewels = 0
     state.completed = {}
+    state.tutorial_seen = {}
     return state
+end
+
+function M.is_tutorial_seen(state, key)
+    if state == nil or state.tutorial_seen == nil then return false end
+    return state.tutorial_seen[key] == true
+end
+
+function M.mark_tutorial_seen(state, key)
+    if state == nil then return end
+    if state.tutorial_seen == nil then state.tutorial_seen = {} end
+    state.tutorial_seen[key] = true
 end
 
 function M.is_box_unlocked(state, box)

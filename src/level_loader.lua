@@ -22,6 +22,7 @@ function M.load_level_from_image_data(image_data, name)
     local cells = {}
     local palette_map = {}
     local palette = {}
+    local min_x, min_y, max_x, max_y
 
     for y = 0, h - 1 do
         for x = 0, w - 1 do
@@ -37,14 +38,33 @@ function M.load_level_from_image_data(image_data, name)
                     gy = y,
                     target = clone_color(r, g, b),
                 }
+                if min_x == nil or x < min_x then min_x = x end
+                if min_y == nil or y < min_y then min_y = y end
+                if max_x == nil or x > max_x then max_x = x end
+                if max_y == nil or y > max_y then max_y = y end
             end
         end
     end
 
+    -- Crop to the opaque-pixel bounding box so the playable grid matches
+    -- the art extent rather than the authored PNG canvas. Levels authored
+    -- with transparent padding (e.g. a 20×20 silhouette on a 64×64 canvas)
+    -- would otherwise render with tiny cells because compute_layout divides
+    -- the board by the full PNG dimensions.
+    local width, height = w, h
+    if min_x ~= nil then
+        for i = 1, #cells do
+            cells[i].gx = cells[i].gx - min_x
+            cells[i].gy = cells[i].gy - min_y
+        end
+        width = max_x - min_x + 1
+        height = max_y - min_y + 1
+    end
+
     return {
         name = name or "level",
-        width = w,
-        height = h,
+        width = width,
+        height = height,
         cells = cells,
         palette = palette,
     }

@@ -16,8 +16,14 @@ local function color_eq(a, b)
 end
 M.color_eq = color_eq
 
+-- Integer key. x,y are non-negative grid coords emitted by level_loader (gx,gy
+-- from PNG pixel positions), so the only constraint is injectivity for valid
+-- cells. 100000 is comfortably larger than any plausible level dimension —
+-- CLAUDE.md says "a few dozen pixels per axis is ideal". Integer keys skip
+-- the string allocation + hashing that used to happen on every BFS neighbor
+-- probe; on 64×64 levels that was the scramble hot-path.
 local function key(x, y)
-    return x .. "," .. y
+    return x * 100000 + y
 end
 
 -- Given a grid (map of key -> cell) and a starting (x,y), return a list of

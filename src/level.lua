@@ -16,6 +16,10 @@ M.STOMP_DURATION = 0.26
 M.CASCADE_STAGGER = 0.05 -- seconds per unit of radial distance from center
 M.OVERLAY_DELAY = 0.18 -- pause between cascade finishing and overlay
 M.LIFT_DURATION = 0.12 -- hover cluster ease-up from the cell on pick-up
+-- Per-jewel launch delay in a deposit fly. Jewels are sorted by distance
+-- from the tap (nearest first) and each one leaves STAGGER s after the
+-- previous, so the cascade visually emanates from the tap point.
+M.PLACE_STAGGER_STEP = 0.04
 
 -- Radial distances from grid center for each cell, used to stagger the
 -- cascade stomp on win. Returned as { [key] = dist, ... } and the max dist.
@@ -94,7 +98,8 @@ function M:update(dt)
 	if self.place_anim ~= nil then
 		local pa = self.place_anim
 		pa.t = pa.t + dt
-		if pa.t >= (M.FLY_DURATION + M.LANDING_PULSE) then
+		local retire_at = pa.total_duration or (M.FLY_DURATION + M.LANDING_PULSE)
+		if pa.t >= retire_at then
 			if pa.pending_shelf ~= nil then
 				for i = 1, #pa.pending_shelf do
 					self.shelf[#self.shelf + 1] = pa.pending_shelf[i]
@@ -151,8 +156,10 @@ function M:progress()
 	return solved, total
 end
 
--- Tap a grid cell at grid (x,y). Returns nothing; mutates state.
-function M:tap_cell(gx, gy)
+-- Tap a grid cell at grid (x,y). sx,sy are the tap pixel coords (optional);
+-- they're used by the deposit path to order per-jewel flight by distance
+-- from the tap so the cascade emanates from the touch point.
+function M:tap_cell(gx, gy, sx, sy)
 	if self.won or self.place_anim or self.win_anim then
 		return
 	end
@@ -195,7 +202,7 @@ function M:tap_cell(gx, gy)
 			-- Drop into this hole and flood to adjacent empty matching holes.
 			local holes = cluster.flood_empty_holes(self.grid, gx, gy, self.state.color)
 			if #holes > 0 then
-				self:place_cluster_into_holes(holes)
+				self:place_cluster_into_holes(holes, sx, sy)
 				return
 			end
 		end
@@ -205,7 +212,7 @@ function M:tap_cell(gx, gy)
 		-- jewels still resolve to a no-op via flood_jewel_cluster.
 		if cell.jewel ~= nil and not cluster.color_eq(cell.jewel, self.state.color) then
 			self:cancel_hover()
-			self:tap_cell(gx, gy)
+			self:tap_cell(gx, gy, sx, sy)
 			return
 		end
 		-- Anything else cancels.
@@ -216,54 +223,125 @@ end
 
 -- Place as many jewels from current hover cluster as possible into `holes`.
 -- Excess jewels return to the source (shelf or scattered grid origins).
-function M:place_cluster_into_holes(holes)
+-- tap_sx, tap_sy (pixels, optional) anchor the cascade: origins and holes
+-- are sorted by distance to the tap so the jewel nearest the tap flies
+-- first, and the rest follow, staggered by PLACE_STAGGER_STEP.
+function M:place_cluster_into_holes(holes, tap_sx, tap_sy)
 	local state = self.state
 	local jewels = state.jewels
 	local n = math.min(#holes, #jewels)
-	for i = 1, n do
-		holes[i].cell.jewel = copy_color(state.color)
-	end
-	-- Remove the placed jewels from the cluster.
-	local remaining = {}
-	for i = n + 1, #jewels do
-		remaining[#remaining + 1] = jewels[i]
+
+	local render = require("src.render")
+	local layout = self.layout
+
+	-- Anchor: tap pixel, else fall back to the tapped hole's pixel center.
+	-- Fallback matters for non-pointer entry points (tests, debug paths).
+	local ax, ay
+	if tap_sx ~= nil and tap_sy ~= nil then
+		ax, ay = tap_sx, tap_sy
+	elseif layout ~= nil then
+		ax, ay = render.grid_cell_pixel(layout, holes[1].cell.x, holes[1].cell.y)
 	end
 
-	if #remaining == 0 then
-		self.state = { kind = "idle" }
-	else
-		-- Keep hovering with the leftover jewels so the player can keep
-		-- tapping matching holes without re-selecting the cluster. Source,
-		-- color, and origin_cells stay pinned — any non-matching tap still
-		-- runs through cancel_hover, which returns the remainder to the
-		-- still-empty origin cells (or shelf if source was shelf).
-		state.jewels = remaining
-	end
-
-	-- Every placement animates. Pair each placed jewel with its source
-	-- position (origin cell or shelf slot). Render resolves grid/shelf
-	-- coords to pixels each frame so animation survives window resizes.
-	local fly = {}
-	local fly_cells_set = {}
-	for i = 1, n do
-		local from
+	local function origin_pixel(i)
+		if layout == nil then return nil, nil end
 		if state.source == "grid" then
 			local oc = state.origin_cells[i].cell
+			return render.grid_cell_pixel(layout, oc.x, oc.y)
+		end
+		return render.shelf_slot_pixel(layout, i)
+	end
+	local function hole_pixel(i)
+		if layout == nil then return nil, nil end
+		return render.grid_cell_pixel(layout, holes[i].cell.x, holes[i].cell.y)
+	end
+	local function dist2(px, py)
+		if ax == nil or px == nil then return 0 end
+		local dx, dy = px - ax, py - ay
+		return dx * dx + dy * dy
+	end
+
+	-- Sort origin + hole indices by proximity to the tap.
+	local origin_order = {}
+	local origin_d = {}
+	for i = 1, #jewels do
+		origin_order[i] = i
+		local px, py = origin_pixel(i)
+		origin_d[i] = dist2(px, py)
+	end
+	table.sort(origin_order, function(a, b) return origin_d[a] < origin_d[b] end)
+
+	local hole_order = {}
+	local hole_d = {}
+	for i = 1, #holes do
+		hole_order[i] = i
+		local px, py = hole_pixel(i)
+		hole_d[i] = dist2(px, py)
+	end
+	table.sort(hole_order, function(a, b) return hole_d[a] < hole_d[b] end)
+
+	-- Place jewels into holes in sorted order (all same color — order only
+	-- changes which indices are "used" for the fly list).
+	for i = 1, n do
+		holes[hole_order[i]].cell.jewel = copy_color(state.color)
+	end
+
+	-- Build fly list before mutating the hover cluster. Nearest-to-tap
+	-- origin pairs with nearest-to-tap hole; stagger grows with rank so
+	-- the cascade radiates outward from the tap.
+	local fly = {}
+	local fly_cells_set = {}
+	local max_t0 = 0
+	for i = 1, n do
+		local oi = origin_order[i]
+		local hi = hole_order[i]
+		local from
+		if state.source == "grid" then
+			local oc = state.origin_cells[oi].cell
 			from = { source = "grid", gx = oc.x, gy = oc.y }
 		else
-			from = { source = "shelf", shelf_index = i }
+			from = { source = "shelf", shelf_index = oi }
 		end
+		local t0 = (i - 1) * M.PLACE_STAGGER_STEP
+		if t0 > max_t0 then max_t0 = t0 end
+		local hc = holes[hi].cell
 		fly[#fly + 1] = {
 			color = copy_color(state.color),
 			from = from,
-			to = { gx = holes[i].cell.x, gy = holes[i].cell.y },
+			to = { gx = hc.x, gy = hc.y },
+			t0 = t0,
 		}
-		fly_cells_set[holes[i].cell.x .. "," .. holes[i].cell.y] = true
+		fly_cells_set[hc.x .. "," .. hc.y] = true
 	end
+
+	-- Reduce the cluster: drop the jewels that actually flew (by origin
+	-- index), keeping the remainder hovering so the player can keep
+	-- depositing into more matching holes.
+	local placed = {}
+	for i = 1, n do placed[origin_order[i]] = true end
+	local rem_j, rem_o = {}, {}
+	for i = 1, #jewels do
+		if not placed[i] then
+			rem_j[#rem_j + 1] = jewels[i]
+			if state.source == "grid" then
+				rem_o[#rem_o + 1] = state.origin_cells[i]
+			end
+		end
+	end
+	if #rem_j == 0 then
+		self.state = { kind = "idle" }
+	else
+		state.jewels = rem_j
+		if state.source == "grid" then
+			state.origin_cells = rem_o
+		end
+	end
+
 	self.place_anim = {
 		t = 0,
 		fly = fly,
 		fly_cells_set = fly_cells_set,
+		total_duration = max_t0 + M.FLY_DURATION + M.LANDING_PULSE,
 		-- Checked now because placement already mutated the grid — if the
 		-- puzzle is complete at this instant, fly hands off to cascade.
 		win_after = self:check_win(),
@@ -271,7 +349,9 @@ function M:place_cluster_into_holes(holes)
 end
 
 -- Tap the shelf strip (empty space). Deposits grid-cluster onto shelf.
-function M:tap_shelf_empty()
+-- sx, sy are the tap pixel coords (optional) — origins nearest the tap
+-- hop onto the shelf first so the cascade radiates from the touch point.
+function M:tap_shelf_empty(sx, sy)
 	if self.won or self.place_anim or self.win_anim then
 		return
 	end
@@ -283,29 +363,72 @@ function M:tap_shelf_empty()
 			return
 		end
 		local fit = math.min(space, #self.state.jewels)
+
+		local render = require("src.render")
+		local layout = self.layout
+
+		-- Anchor: tap pixel, else the first empty shelf slot as a sensible
+		-- fallback (players that reach this path without a pointer event).
+		local ax, ay
+		if sx ~= nil and sy ~= nil then
+			ax, ay = sx, sy
+		elseif layout ~= nil then
+			ax, ay = render.shelf_slot_pixel(layout, #self.shelf + 1)
+		end
+
+		local function origin_pixel(i)
+			if layout == nil then return nil, nil end
+			local oc = self.state.origin_cells[i].cell
+			return render.grid_cell_pixel(layout, oc.x, oc.y)
+		end
+		local function dist2(px, py)
+			if ax == nil or px == nil then return 0 end
+			local dx, dy = px - ax, py - ay
+			return dx * dx + dy * dy
+		end
+
+		local order = {}
+		local d = {}
+		for i = 1, #self.state.jewels do
+			order[i] = i
+			local px, py = origin_pixel(i)
+			d[i] = dist2(px, py)
+		end
+		table.sort(order, function(a, b) return d[a] < d[b] end)
+
 		local fly = {}
 		local base = #self.shelf
 		local pending = {}
+		local max_t0 = 0
 		for i = 1, fit do
-			local oc = self.state.origin_cells[i].cell
+			local oi = order[i]
+			local oc = self.state.origin_cells[oi].cell
+			local t0 = (i - 1) * M.PLACE_STAGGER_STEP
+			if t0 > max_t0 then max_t0 = t0 end
 			fly[#fly + 1] = {
 				color = copy_color(self.state.color),
 				from = { source = "grid", gx = oc.x, gy = oc.y },
 				to = { source = "shelf", shelf_index = base + i },
+				t0 = t0,
 			}
-			pending[i] = self.state.jewels[i]
+			pending[i] = self.state.jewels[oi]
 		end
 		self.place_anim = {
 			t = 0,
 			fly = fly,
 			fly_cells_set = {},
 			pending_shelf = pending,
+			total_duration = max_t0 + M.FLY_DURATION + M.LANDING_PULSE,
 		}
 		if fit < #self.state.jewels then
+			local placed = {}
+			for i = 1, fit do placed[order[i]] = true end
 			local rem_j, rem_o = {}, {}
-			for i = fit + 1, #self.state.jewels do
-				rem_j[#rem_j + 1] = self.state.jewels[i]
-				rem_o[#rem_o + 1] = self.state.origin_cells[i]
+			for i = 1, #self.state.jewels do
+				if not placed[i] then
+					rem_j[#rem_j + 1] = self.state.jewels[i]
+					rem_o[#rem_o + 1] = self.state.origin_cells[i]
+				end
 			end
 			self.state.jewels = rem_j
 			self.state.origin_cells = rem_o
@@ -320,12 +443,14 @@ function M:tap_shelf_empty()
 end
 
 -- Tap a specific shelf jewel (by index). If idle, lift all same-color on shelf.
-function M:tap_shelf_jewel(index)
+-- sx, sy are the tap pixel coords (optional) — forwarded to tap_shelf_empty
+-- for the auto-swap path that falls back to parking the current cluster.
+function M:tap_shelf_jewel(index, sx, sy)
 	if self.won or self.place_anim or self.win_anim then
 		return
 	end
 	if index == nil or self.shelf[index] == nil then
-		self:tap_shelf_empty()
+		self:tap_shelf_empty(sx, sy)
 		return
 	end
 	if self.state.kind == "idle" then
@@ -358,11 +483,11 @@ function M:tap_shelf_jewel(index)
 	local shelf_jewel = self.shelf[index]
 	if shelf_jewel ~= nil and not cluster.color_eq(shelf_jewel.color, self.state.color) then
 		self:cancel_hover()
-		self:tap_shelf_jewel(index)
+		self:tap_shelf_jewel(index, sx, sy)
 		return
 	end
 	-- Same color (or index past shelf length): keep original "deposit to shelf" behavior.
-	self:tap_shelf_empty()
+	self:tap_shelf_empty(sx, sy)
 end
 
 function M:cancel_hover()

@@ -16,24 +16,31 @@ function M.classify(level, layout, sx, sy)
         local idx = render.screen_to_shelf(
             layout, #level.shelf, sx, sy, level.shelf_capacity
         ) or 0
-        return { kind = "shelf", index = idx }
+        return { kind = "shelf", index = idx, sx = sx, sy = sy }
     end
 
-    local gx, gy = render.screen_to_grid(layout, sx, sy)
-    if gx ~= nil then
-        return { kind = "grid", gx = gx, gy = gy }
+    -- Only accept grid taps that fall inside the visible board rect. With
+    -- zoom > 1 the grid can extend past the board, and without this gate a
+    -- tap outside the board would still resolve to a grid cell through
+    -- screen_to_grid's inverse math.
+    local ga = layout.grid_area
+    if sx >= ga.x and sx <= ga.x + ga.w and sy >= ga.y and sy <= ga.y + ga.h then
+        local gx, gy = render.screen_to_grid(layout, sx, sy)
+        if gx ~= nil then
+            return { kind = "grid", gx = gx, gy = gy, sx = sx, sy = sy }
+        end
     end
-    return { kind = "outside" }
+    return { kind = "outside", sx = sx, sy = sy }
 end
 
 function M.dispatch(level, tap)
     if tap.kind == "grid" then
-        level:tap_cell(tap.gx, tap.gy)
+        level:tap_cell(tap.gx, tap.gy, tap.sx, tap.sy)
     elseif tap.kind == "shelf" then
         if tap.index > 0 then
-            level:tap_shelf_jewel(tap.index)
+            level:tap_shelf_jewel(tap.index, tap.sx, tap.sy)
         else
-            level:tap_shelf_empty()
+            level:tap_shelf_empty(tap.sx, tap.sy)
         end
     else
         level:cancel_hover()

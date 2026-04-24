@@ -45,11 +45,12 @@ spacing scale. These are the declared constants.
 | `grid_h_fraction` | 2/3 | Grid area occupies top ⅔ of the window, shelf the bottom ⅓ | `render.compute_layout` |
 | `cell_size` | `floor(min(grid_w/cols, grid_h/rows))` | Square cell, centered in grid_area with leftover pixels as gutter | `render.compute_layout` |
 | `board_pad` | 6 px | Extra padding of the "board" plaque outside `grid_area` | `render.draw` |
-| `shelf slot` | `min(shelf_w / 6, shelf_h / 2 · 0.9)`, min 8 | Slot edge on the 2×6 shelf grid (6 columns, 2 rows, capacity 12) | `render.shelf_slot_size` |
-| `shelf jewel r` | `floor(slot · 0.38)` | Shelf jewel radius | `render.draw` |
-| `grid jewel r` | `cell_size · 0.34` | Resting jewel radius in a cell | `render.draw_cell` |
-| `ring r` | `cell_size · 0.46` | Painted target-color ring | `render.draw_cell` |
-| `hole r` | `cell_size · 0.36` | Recessed dark hole inside the ring | `render.draw_cell` |
+| `shelf slot` | `min(shelf_w / 8, shelf_h / 3 · 0.9)`, min 8 | Slot edge on the 3×8 shelf grid (8 columns, 3 rows, capacity 24) | `render.shelf_slot_size` |
+| `shelf jewel r` | `floor(slot · 0.38)` | Shelf jewel radius (gem diameter through `draw_jewel_asset`) | `render.draw` |
+| `grid jewel r` | `cell_size · 0.34` | Resting jewel radius in a cell (gem diameter through `draw_jewel_asset`) | `render.draw_cell` |
+| `cell corner` | `cell_size · 0.08` | Rounded-corner radius on the target-color square tile | `render.draw_cell` |
+| `slot tint` | `target_color · 0.35` | Multiplicative tint applied to the cream slot PNG so each cell's slot reads as a darker version of its target color | `render.draw_cell` |
+| `jewel gem frac` | `0.85` | Fraction of the jewel PNG occupied by the visible gem (halo outside). Callers pass gem diameter; footprint derived as `gem / 0.85` | `render.draw_jewel_asset` |
 | `lift` | `floor(cell_size · 0.18)` | Vertical offset for the hovering cluster | `render.draw` |
 | `book spine` | 36 px | Left spine strip on a box card | `render.draw_box_card` |
 | `medal small` / `medal celebration` | 22 / 56 px | Medal sizes (level tile / celebration card) | `render.draw_level_tile`, `render.draw_celebration` |
@@ -67,8 +68,9 @@ spacing scale. These are the declared constants.
 
 Rationale: the grid is fluid (levels are arbitrary widths × heights from
 PNGs), so there is no fixed spacing scale — everything derives from
-`cell_size`. Proportional constants (0.18, 0.34, 0.38, 0.46) are the
-real design tokens and should be preserved if touched.
+`cell_size`. Proportional constants (0.18, 0.34, 0.38, 0.08 corner,
+0.35 slot tint) are the real design tokens and should be preserved if
+touched.
 
 ---
 
@@ -99,7 +101,7 @@ this is a game, not a marketing page.
 | Board inset | `walnut` (via `board`) | 0.32 · 0.20 · 0.10 | Recessed plaque behind grid |
 | Oak plaque | `plaque` | 0.58 · 0.40 · 0.24 | Back button, empty target fallback |
 | Shelf tray | `walnut` | 0.32 · 0.20 · 0.10 | Recessed shelf channel |
-| Empty hole | `walnut_dark` | 0.18 · 0.10 · 0.05 | Inside the ring + empty shelf slot wells |
+| Empty hole | `walnut_dark` | 0.18 · 0.10 · 0.05 | Empty shelf slot wells (grid cells now show a darkened-target-color slot via asset tint, not walnut) |
 | Parchment page | `parchment` | 0.92 · 0.84 · 0.66 | Menu backdrops, win overlay |
 | Cork tile | `cork` | 0.66 · 0.49 · 0.29 | Level thumbnail tiles |
 | Locked wood | `locked` | 0.40 · 0.33 · 0.25 | Locked box cards, book spines |
@@ -129,13 +131,14 @@ this is a game, not a marketing page.
 Jewel colors are **data, not design tokens** — they come from the source
 PNG pixels in `levels/*.png`. The design contract is: keep levels to a
 small number of saturated, distinguishable colors; avoid near-grays and
-near-blacks (they collide with walnut/ink). The target ring on each
-cell always uses the jewel's color verbatim.
+near-blacks (they collide with walnut/ink). Each cell's target-color
+square uses the jewel's color verbatim, and the slot asset on top is
+tinted to the same color at 35% brightness.
 
 **Accent discipline:** the only saturated pixels on screen should be
-jewels, target rings, medals, the jewel badge, and the flash. Everything
-else is wood, parchment, ink, or foil. Do not tint UI chrome with jewel
-colors.
+jewels, grid cells (target-color square + darkened slot), medals, the
+jewel badge, and the flash. Everything else is wood, parchment, ink, or
+foil. Do not tint UI chrome with jewel colors.
 
 ---
 
@@ -146,8 +149,8 @@ here.
 
 | State | Visual treatment | Source |
 |-------|------------------|--------|
-| Idle jewel | Circle at `cell_size · 0.34` with top-left white highlight | `render.draw_cell` |
-| Locked jewel | Same as idle — intentional. The lock is conveyed by the jewel color matching its ring color, so the cell reads as "settled". No extra decoration. | `src/cluster.lua` |
+| Idle jewel | Tinted octagonal gem asset (`assets/Jewel_8edges.png`) at gem diameter `cell_size · 0.68`, drawn through `draw_jewel_asset` | `render.draw_cell` |
+| Locked jewel | Same as idle — intentional. The lock is conveyed by the jewel color matching its cell's target color (same square tint beneath), so the cell reads as "settled". No extra decoration. | `src/cluster.lua` |
 | Hovering (lifted) | Source cells suppressed; cluster floats at origin positions, lifted by `cell_size · 0.18`, bobbing `sin(t · 4 + x · 0.7 + y · 0.5) · 2`, with a soft drop shadow | `render.draw` |
 | Shelf hover | Cluster floats above the shelf tray, centered, bobbing | `render.draw` |
 | Flash | Red text (`FLASH_COLOR`) with a darker shadow, alpha = `min(1, flash.t)` | `render.draw` |
@@ -202,7 +205,7 @@ from the web build (Fengari on love.js):
 | No `os.execute`, `io.popen`, FFI, `love.thread`, screen-capture callbacks | All `.lua` | Code review |
 | All filesystem access through `love.filesystem` | All `.lua` | Code review |
 | Only bundled font | `assets/fonts/FredokaOne-Regular.ttf` | `render.lua` FONT_PATH |
-| No PNG asset dependency for UI chrome | Chrome is procedural in `wood.lua`; PNGs are levels only | `levels/*.png` are the only image files |
+| PNG asset dependency kept minimal | Wood/parchment chrome is procedural in `wood.lua`. Permitted PNGs: `levels/*.png` (data), `assets/jewel_slot_8edges.png` (bevelled slot), `assets/Jewel_8edges.png` (faceted gem). No additional image assets without a contract update. | File listing under `assets/` |
 
 Adding a new visual element: **prefer extending `wood.lua`** (new `kind`
 in `tones()` + cache key) over loading an asset. Assets cost bundle
