@@ -398,14 +398,59 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
   var OUT = '/__ya_out';
   var IN  = '/__ya_in';
   var LOCALE = '/__ya_locale';
+  // Yandex covers the game iframe with its own preloader until
+  // LoadingAPI.ready() fires. If we wait for love.wasm + game.data to
+  // finish downloading before signaling ready, the custom splash below
+  // is hidden behind Yandex's preloader for the entire wait and the
+  // player never sees it. Instead we fire ready() as soon as the SDK
+  // resolves so Yandex uncovers us immediately; the splash then plays
+  // for the real duration of the download. loadingReadyFired guards
+  // the Lua-side platform.loading_ready() dispatch from calling a
+  // second time.
+  var loadingReadyFired = false;
+
+  // Emscripten + Davidobot love.js in --compatibility mode does not
+  // export FS onto Module. It does, however, leak FS as a top-level
+  // global inside the love.js bundle. Try both; cache the first
+  // non-null resolution and log once for diagnostics.
+  var _fsCached = null, _fsResolvedOnce = false;
+  function getFS(){
+    if (_fsCached) return _fsCached;
+    var candidates = [];
+    if (typeof FS !== 'undefined' && FS) candidates.push(['global FS', FS]);
+    if (typeof window !== 'undefined' && window.FS) candidates.push(['window.FS', window.FS]);
+    if (window.Module && window.Module.FS) candidates.push(['Module.FS', window.Module.FS]);
+    for (var i = 0; i < candidates.length; i++){
+      var fs = candidates[i][1];
+      if (fs && typeof fs.writeFile === 'function' && typeof fs.readFile === 'function'){
+        if (!_fsResolvedOnce){
+          console.info('[yabridge] FS resolved via', candidates[i][0]);
+          _fsResolvedOnce = true;
+        }
+        _fsCached = fs;
+        return fs;
+      }
+    }
+    return null;
+  }
 
   function tryRead(path){
-    try { return Module.FS.readFile(path, { encoding: 'utf8' }); }
+    var fs = getFS();
+    if (!fs) return null;
+    try { return fs.readFile(path, { encoding: 'utf8' }); }
     catch(e){ return null; }
   }
   function tryWrite(path, data){
-    try { Module.FS.writeFile(path, data); return true; }
-    catch(e){ console.warn('yabridge write failed', path, e); return false; }
+    var fs = getFS();
+    if (!fs){
+      if (!tryWrite._warned){
+        console.warn('[yabridge] no FS available — bridge calls will be dropped. path=', path);
+        tryWrite._warned = true;
+      }
+      return false;
+    }
+    try { fs.writeFile(path, data); return true; }
+    catch(e){ console.warn('[yabridge] write failed', path, e); return false; }
   }
   function appendIn(line){
     var prev = tryRead(IN) || '';
@@ -425,8 +470,10 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
   function dispatch(cmd, rest){
     if (!ysdk) return;  // offline / pre-init: drop silently
     if (cmd === 'loading_ready') {
+      if (loadingReadyFired) return;  // already fired from connectSdk
       if (ysdk.features && ysdk.features.LoadingAPI) {
-        try { ysdk.features.LoadingAPI.ready(); } catch(e){ console.warn(e); }
+        try { ysdk.features.LoadingAPI.ready(); loadingReadyFired = true; }
+        catch(e){ console.warn(e); }
       }
     } else if (cmd === 'gameplay_start') {
       if (ysdk.features && ysdk.features.GameplayAPI) {
@@ -497,11 +544,29 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
       ysdk = sdk;
       try {
         var lang = (sdk.environment && sdk.environment.i18n && sdk.environment.i18n.lang) || 'en';
-        tryWrite(LOCALE, String(lang));
-      } catch(e){ tryWrite(LOCALE, 'en'); }
-      console.info('YaGames ready, lang=', tryRead(LOCALE));
+        // Only overwrite /__ya_locale if Module.FS is live; during the
+        // splash phase the FS may not be mounted yet, in which case
+        // preRun already queued the URL-param lang.
+        if (window.Module && Module.FS) tryWrite(LOCALE, String(lang));
+      } catch(e){ if (window.Module && Module.FS) tryWrite(LOCALE, 'en'); }
+      console.info('YaGames ready');
+      // Dismiss Yandex's preloader overlay ASAP so the custom splash
+      // below becomes visible. Safe to call before love.wasm finishes
+      // downloading — Yandex just hides the preloader, it doesn't gate
+      // anything gameplay-related.
+      if (!loadingReadyFired && sdk.features && sdk.features.LoadingAPI) {
+        try {
+          sdk.features.LoadingAPI.ready();
+          loadingReadyFired = true;
+          console.info('[yabridge] LoadingAPI.ready() fired early');
+        } catch(e){ console.warn('LoadingAPI.ready failed', e); }
+      }
     }).catch(function(e){ console.warn('YaGames.init failed', e); });
   }
+
+  // Kick off SDK init immediately so Yandex uncovers the iframe while
+  // the splash is still animating, not after the multi-MB wasm fetch.
+  connectSdk();
 
   // --- Emscripten / Love module setup --------------------------------
   window.Module = {
@@ -517,11 +582,13 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
         var q = new URLSearchParams(location.search).get('lang');
         if (q) lang = String(q).toLowerCase().slice(0, 2);
       } catch(e){}
-      try {
-        Module.FS.writeFile('/__ya_locale', lang);
-        console.info('[yabridge] preRun wrote locale=' + lang + ' to /__ya_locale');
-      } catch(e){
-        console.warn('[yabridge] preRun FS write FAILED:', e, 'lang=', lang);
+      // Route through getFS() fallback chain — Module.FS isn't
+      // exported in this build.
+      var ok = tryWrite('/__ya_locale', lang);
+      if (ok) {
+        console.info('[yabridge] preRun wrote locale=' + lang);
+      } else {
+        console.warn('[yabridge] preRun could not write locale=' + lang + ' (no FS)');
       }
     }],
     // Belt-and-suspenders hide of the splash + canvas reveal. Some
@@ -538,23 +605,22 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
       if (lc) lc.style.display = 'none';
       var c = document.getElementById('canvas');
       if (c) c.style.visibility = 'visible';
-      // Also verify the locale write survived. If it failed in
-      // preRun, re-attempt from here (FS is definitely live now).
-      try {
-        var have = Module.FS.readFile('/__ya_locale', { encoding: 'utf8' });
-        if (!have) {
-          var lang = 'en';
-          try {
-            var q = new URLSearchParams(location.search).get('lang');
-            if (q) lang = String(q).toLowerCase().slice(0, 2);
-          } catch(e){}
-          Module.FS.writeFile('/__ya_locale', lang);
+      // If preRun couldn't write the locale because FS wasn't yet
+      // reachable, retry now via the getFS() fallback chain.
+      var have = tryRead('/__ya_locale');
+      if (!have) {
+        var lang = 'en';
+        try {
+          var q = new URLSearchParams(location.search).get('lang');
+          if (q) lang = String(q).toLowerCase().slice(0, 2);
+        } catch(e){}
+        if (tryWrite('/__ya_locale', lang)) {
           console.info('[yabridge] onRuntimeInitialized re-wrote locale=' + lang);
         } else {
-          console.info('[yabridge] onRuntimeInitialized sees locale=' + have);
+          console.warn('[yabridge] onRuntimeInitialized still no FS; locale stuck at default');
         }
-      } catch(e){
-        console.warn('[yabridge] onRuntimeInitialized locale check FAILED:', e);
+      } else {
+        console.info('[yabridge] onRuntimeInitialized sees locale=' + have);
       }
     },
     INITIAL_MEMORY: 67108864,
@@ -580,7 +646,9 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
         stopRaf();
         document.getElementById('loadingCanvas').style.display = 'none';
         document.getElementById('canvas').style.visibility = 'visible';
-        connectSdk();
+        // SDK was connected at script start; now start polling Lua
+        // commands. Idempotent-safe to enter this branch more than
+        // once because setInterval is guarded by remainingDependencies.
         setInterval(tick, 50);
       }
     },

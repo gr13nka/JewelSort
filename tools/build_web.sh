@@ -40,4 +40,13 @@ echo "build_web: patching for Yandex Games..."
 
 size_mb=$(du -sm build/web | cut -f1)
 echo "build_web: done. build/web/ is ${size_mb} MB."
+
+# Always produce build/jewelsort.zip ready to upload to the Yandex
+# Games console. Zip must be rooted at the build files themselves,
+# not a build/web/ parent folder, or Yandex will reject it.
+echo "build_web: zipping upload bundle..."
+rm -f build/jewelsort.zip
+(cd build/web && zip -qr ../jewelsort.zip .)
+zip_mb=$(du -sm build/jewelsort.zip | cut -f1)
+echo "build_web: upload bundle ready → build/jewelsort.zip (${zip_mb} MB)"
 echo "build_web: to serve locally: npx http-server build/web -p 8080 -o"
