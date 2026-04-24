@@ -12,6 +12,7 @@ local input = require("src.input")
 local progression = require("src.progression")
 local Menu = require("src.menu")
 local Particles = require("src.particles")
+local platform = require("src.platform")
 
 local game = {
     mode = "menu",              -- "menu" | "playing"
@@ -30,6 +31,16 @@ local game = {
                                 -- celebration overlay (see draw_celebration)
     f1_hold = 0,                -- seconds F1 has been held this press
     f1_fired = false,           -- true once the reset has fired for this press
+    -- Pause flag raised while a fullscreen ad is on screen. Yandex
+    -- rules: during interstitial/rewarded, gameplay must be paused
+    -- and audio muted. Audio is a no-op for us (game is silent) but
+    -- the update gate still matters — celebration timers and
+    -- particle systems would otherwise tick through the ad.
+    paused = false,
+    -- Monotonic game-time tracker used to throttle interstitial
+    -- requests to at most 1 per MIN_AD_INTERVAL seconds. Yandex
+    -- also rate-limits server-side but being polite saves calls.
+    last_ad_time = -1e9,
     -- Celebration overlay state, built when a puzzle is won. Lives here
     -- (not on Level) because it needs to outlive the Level instance when
     -- the flight-to-counter animation starts on the menu screen.
@@ -56,6 +67,11 @@ local TUTORIAL_ZOOM_PAN = "zoom_pan"
 local TUTORIAL_TRIGGER_BOX_ID = "forest"
 
 local F1_RESET_HOLD_SECONDS = 3
+
+-- Interstitial throttle. Yandex rate-limits server-side, but asking
+-- for an ad we know will be skipped wastes a round-trip and may also
+-- hurt fill-rate metrics. 60 s matches Yandex's documented interval.
+local MIN_AD_INTERVAL = 60
 
 -- 9:16 portrait is the design aspect. When the host viewport differs,
 -- we letterbox the content rect so nothing is ever clipped. Yandex
@@ -172,6 +188,7 @@ local function start_puzzle(box_idx, puzzle_idx)
     if puzzle == nil then return end
     local desc = game.descriptors[puzzle.id]
     if desc == nil then return end
+    platform.gameplay_start()
     game.level = Level.new(desc)
     local w, h = viewport()
     -- Fresh view per puzzle. Auto-zoom kicks in when fit-to-board cells
@@ -208,6 +225,7 @@ local function start_puzzle(box_idx, puzzle_idx)
 end
 
 local function return_to_menu()
+    platform.gameplay_stop()
     game.level = nil
     game.layout = nil
     game.view = nil
@@ -349,6 +367,12 @@ function love.load(args)
             print("[DEV] --dev-win: no puzzle to start")
         end
     end
+
+    -- Yandex: LoadingAPI.ready() dismisses their preloader; required.
+    -- Sticky banner lives in whatever region the developer console
+    -- configured (usually below the canvas in portrait).
+    platform.loading_ready()
+    platform.banner_show()
 end
 
 local function reset_progress()
@@ -411,6 +435,10 @@ local function counter_pulse_scale()
 end
 
 function love.update(dt)
+    -- Drain any inbound bridge events (ad close, cloud load) every
+    -- frame, even while paused — that's how we unpause.
+    platform.tick()
+    if game.paused then return end
     if love.mouse then
         local mx, my = love.mouse.getPosition()
         game.mouse.x, game.mouse.y = to_content(mx, my)
@@ -568,8 +596,28 @@ local function try_press_complete_button(sx, sy)
     return false
 end
 
+-- Decide whether this celebration should trigger an interstitial.
+-- Skip for replays (award.first_time == false), the very first win
+-- (keeps the "oh nice" onboarding moment ad-free), and within the
+-- MIN_AD_INTERVAL throttle window.
+local function should_show_interstitial()
+    if not platform.is_web() then return false end
+    local c = game.celebration
+    if c == nil or c.award == nil then return false end
+    if not c.award.first_time then return false end
+    if game.progress and game.progress.jewels <= c.award.jewels_delta then
+        -- "jewels == jewels_delta" means this award is the player's
+        -- first ever → skip the ad on the very first win.
+        return false
+    end
+    local now = love.timer.getTime()
+    if now - game.last_ad_time < MIN_AD_INTERVAL then return false end
+    return true
+end
+
 -- Release on Complete button: fires the return if release lands inside
--- the same button rect.
+-- the same button rect. If an interstitial is due, we show it first
+-- and defer begin_return_flight until the ad's onClose callback fires.
 local function try_release_complete_button(sx, sy)
     if game.celebration == nil or not game.celebration.button_pressed then
         return false
@@ -577,7 +625,16 @@ local function try_release_complete_button(sx, sy)
     game.celebration.button_pressed = false
     local bx, by, bw, bh = render.celebration_button_rect(viewport())
     if sx >= bx and sx <= bx + bw and sy >= by and sy <= by + bh then
-        begin_return_flight()
+        if should_show_interstitial() then
+            game.paused = true
+            game.last_ad_time = love.timer.getTime()
+            platform.interstitial(function(_was_shown)
+                game.paused = false
+                begin_return_flight()
+            end)
+        else
+            begin_return_flight()
+        end
         return true
     end
     return false
