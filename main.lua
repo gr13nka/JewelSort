@@ -13,6 +13,7 @@ local progression = require("src.progression")
 local Menu = require("src.menu")
 local Particles = require("src.particles")
 local platform = require("src.platform")
+local i18n = require("src.i18n")
 
 local game = {
     mode = "menu",              -- "menu" | "playing"
@@ -333,6 +334,12 @@ function love.load(args)
     if love.math and love.math.setRandomSeed then
         love.math.setRandomSeed(os.time())
     end
+
+    -- Locale needs to be set before any module rendering runs. On web
+    -- platform.locale() returns the Yandex user locale; on desktop we
+    -- fall back to English. Unknown languages fall through to English
+    -- inside i18n.set_locale.
+    i18n.set_locale(platform.locale())
 
     ensure_samples_exist()
     game.boxes = load_boxes()

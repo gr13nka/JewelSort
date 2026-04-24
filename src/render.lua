@@ -7,6 +7,7 @@ local M = {}
 
 local Level = require("src.level")
 local wood = require("src.wood")
+local i18n = require("src.i18n")
 
 local P = wood.palette
 
@@ -14,6 +15,12 @@ local FLASH_COLOR = { 0.80, 0.20, 0.18 }
 
 -- Fredoka One (Google Fonts, SIL OFL) — rounded warm display font that
 -- matches the cozy puzzle / Picross 3D vibe. 2.5x over LÖVE default (~13 -> 32).
+-- Fredoka One has *partial* Cyrillic coverage, so for the Yandex Games
+-- (Russian) target we register LÖVE's built-in default font (Vera Sans,
+-- full Cyrillic) as a fallback. Missing glyphs rendered in Vera look
+-- slightly more plain than the warm Latin in Fredoka, but every
+-- character still shows — and Yandex moderation rejects games with
+-- missing glyphs in a shipping locale.
 local FONT_PATH = "assets/fonts/FredokaOne-Regular.ttf"
 local FONT_BODY_SIZE = 32
 local FONT_SMALL_SIZE = 22
@@ -22,6 +29,10 @@ local _font_body, _font_small
 local function font_body()
     if _font_body == nil then
         _font_body = love.graphics.newFont(FONT_PATH, FONT_BODY_SIZE)
+        if _font_body.setFallbacks then
+            local fallback = love.graphics.newFont(FONT_BODY_SIZE)
+            _font_body:setFallbacks(fallback)
+        end
     end
     return _font_body
 end
@@ -29,6 +40,10 @@ end
 local function font_small()
     if _font_small == nil then
         _font_small = love.graphics.newFont(FONT_PATH, FONT_SMALL_SIZE)
+        if _font_small.setFallbacks then
+            local fallback = love.graphics.newFont(FONT_SMALL_SIZE)
+            _font_small:setFallbacks(fallback)
+        end
     end
     return _font_small
 end
@@ -721,7 +736,7 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
         use_small()
         local fh = love.graphics.getFont():getHeight()
         local ly = b.y + math.floor((b.h - fh) / 2) - 1
-        print_engraved("< Back", b.x, ly, b.w, "center", P.ink_light, 0.4)
+        print_engraved(i18n.t("back"), b.x, ly, b.w, "center", P.ink_light, 0.4)
         use_body()
     end
 
@@ -795,7 +810,7 @@ function M.draw_tutorial_overlay(tutorial, W, H)
     -- Title.
     use_body()
     local title_fh = love.graphics.getFont():getHeight()
-    print_engraved("Zoom & Pan", px, py + 22, pw, "center", P.ink, 0.4)
+    print_engraved(i18n.t("tutorial_title"), px, py + 22, pw, "center", P.ink, 0.4)
 
     -- Two icon rows. Each row: icon on the left, caption to its right.
     use_small()
@@ -808,11 +823,11 @@ function M.draw_tutorial_overlay(tutorial, W, H)
     local text_w = pw - (text_x - px) - 20
 
     draw_wheel_icon(icon_cx, row_y1 + 20, icon_size, P.ink)
-    print_engraved("Scroll wheel  -  zoom in/out",
+    print_engraved(i18n.t("tutorial_wheel"),
         text_x, row_y1 + 20 - small_fh / 2, text_w, "left", P.ink, 0.35)
 
     draw_hand_icon(icon_cx, row_y2 + 20, icon_size, P.ink)
-    print_engraved("Drag background  -  pan",
+    print_engraved(i18n.t("tutorial_drag"),
         text_x, row_y2 + 20 - small_fh / 2, text_w, "left", P.ink, 0.35)
 
     -- "Got it" button — same style as Complete.
@@ -827,10 +842,11 @@ function M.draw_tutorial_overlay(tutorial, W, H)
     use_body()
     local btn_fh = love.graphics.getFont():getHeight()
     local btn_ly = by + math.floor((bh - btn_fh) / 2) - 1
+    local got_it = i18n.t("got_it")
     love.graphics.setColor(0, 0, 0, 0.4)
-    love.graphics.printf("Got it", bx, btn_ly + 1, bw, "center")
+    love.graphics.printf(got_it, bx, btn_ly + 1, bw, "center")
     love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 1)
-    love.graphics.printf("Got it", bx, btn_ly, bw, "center")
+    love.graphics.printf(got_it, bx, btn_ly, bw, "center")
     use_body()
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -906,9 +922,9 @@ local function draw_complete_button(rect, pressed, alpha, press_scale)
     local ly = y + (h - fh) / 2 - 1
     local label_alpha = pressed and 0.9 or 1.0
     love.graphics.setColor(0, 0, 0, 0.4 * alpha)
-    love.graphics.printf("Complete", x, ly + 1, w, "center")
+    love.graphics.printf(i18n.t("complete"), x, ly + 1, w, "center")
     love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], label_alpha * alpha)
-    love.graphics.printf("Complete", x, ly, w, "center")
+    love.graphics.printf(i18n.t("complete"), x, ly, w, "center")
 
     love.graphics.pop()
 end
@@ -969,9 +985,10 @@ function M.draw_celebration(celebration, particles, confetti, W, H)
         use_body()
         push_scale_around(title_cx, title_cy, title_scale)
         love.graphics.setColor(0, 0, 0, 0.4 * title_alpha)
-        love.graphics.printf("Solved!", px, py + 20 + 1, pw, "center")
+        local solved = i18n.t("solved")
+        love.graphics.printf(solved, px, py + 20 + 1, pw, "center")
         love.graphics.setColor(P.ink[1], P.ink[2], P.ink[3], title_alpha)
-        love.graphics.printf("Solved!", px, py + 20, pw, "center")
+        love.graphics.printf(solved, px, py + 20, pw, "center")
         love.graphics.pop()
     end
 
@@ -1033,8 +1050,7 @@ function M.draw_celebration(celebration, particles, confetti, W, H)
                 end
                 celebration.count_display = new_display
                 local display_n = celebration.count_display or 0
-                local line = "+" .. tostring(display_n) .. " jewel"
-                if display_n ~= 1 then line = line .. "s" end
+                local line = i18n.t_plural("jewel_delta", display_n)
                 love.graphics.setColor(0, 0, 0, 0.3)
                 love.graphics.printf(line, px, line_y + 1, pw, "center")
                 love.graphics.setColor(P.ink_soft[1], P.ink_soft[2], P.ink_soft[3], 1)
@@ -1042,9 +1058,10 @@ function M.draw_celebration(celebration, particles, confetti, W, H)
             end
         else
             love.graphics.setColor(0, 0, 0, 0.3)
-            love.graphics.printf("Already mastered", px, line_y + 1, pw, "center")
+            local mastered = i18n.t("already_mastered")
+            love.graphics.printf(mastered, px, line_y + 1, pw, "center")
             love.graphics.setColor(P.ink_soft[1], P.ink_soft[2], P.ink_soft[3], 1)
-            love.graphics.printf("Already mastered", px, line_y, pw, "center")
+            love.graphics.printf(mastered, px, line_y, pw, "center")
         end
     end
 
@@ -1135,9 +1152,9 @@ function M.draw_reset_overlay(progress, win_w, win_h)
     wood.draw_panel("parchment", px, py, pw, ph, 12)
 
     love.graphics.setColor(0, 0, 0, 0.3 * fade)
-    love.graphics.printf("Resetting progress...", px, py + 17, pw, "center")
+    love.graphics.printf(i18n.t("resetting"), px, py + 17, pw, "center")
     love.graphics.setColor(P.ink[1], P.ink[2], P.ink[3], fade)
-    love.graphics.printf("Resetting progress...", px, py + 16, pw, "center")
+    love.graphics.printf(i18n.t("resetting"), px, py + 16, pw, "center")
 
     local bar_w = pw - 40
     local bar_h = 8
@@ -1279,7 +1296,7 @@ local function draw_box_card(menu, progression, box, i, win_w)
         use_small()
         love.graphics.setColor(P.ink_light[1], P.ink_light[2], P.ink_light[3], 0.85)
         love.graphics.printf(
-            "Locked — needs " .. tostring(box.jewel_cost or 0) .. " jewels",
+            i18n.t_plural("locked_needs", box.jewel_cost or 0),
             title_x, y + h / 2 - 12, w - spine_w - 32, "left"
         )
         use_body()
@@ -1319,7 +1336,7 @@ local function draw_placeholder_stamp(x, y, w, h)
     love.graphics.circle("line", 0, 0, r * 0.82)
     use_small()
     local fh = love.graphics.getFont():getHeight()
-    print_engraved("SEALED", -r, -fh / 2, r * 2, "center", ink_r, 0.2)
+    print_engraved(i18n.t("sealed"), -r, -fh / 2, r * 2, "center", ink_r, 0.2)
     use_body()
     love.graphics.pop()
 end
@@ -1346,7 +1363,7 @@ local function draw_placeholder_polaroid(x, y, w, h)
     use_small()
     local fh = love.graphics.getFont():getHeight()
     love.graphics.setColor(P.ink_soft[1], P.ink_soft[2], P.ink_soft[3], 0.55)
-    love.graphics.printf("? ? ?", px, py + (ph - fh) / 2, pw, "center")
+    love.graphics.printf(i18n.t("no_preview"), px, py + (ph - fh) / 2, pw, "center")
     use_body()
 
     return px, py, pw, ph
@@ -1368,7 +1385,7 @@ local function draw_placeholder_stamped_polaroid(x, y, w, h)
     love.graphics.setColor(ink_r[1], ink_r[2], ink_r[3], 0.8)
     love.graphics.line(-label_w / 2, -fh / 2 - 4, label_w / 2, -fh / 2 - 4)
     love.graphics.line(-label_w / 2,  fh / 2 + 4, label_w / 2,  fh / 2 + 4)
-    print_engraved("UNSOLVED", -label_w / 2, -fh / 2, label_w, "center", ink_r, 0.25)
+    print_engraved(i18n.t("unsolved"), -label_w / 2, -fh / 2, label_w, "center", ink_r, 0.25)
     use_body()
     love.graphics.pop()
 end
@@ -1524,7 +1541,7 @@ local function draw_back_button(menu)
     love.graphics.setLineWidth(1)
     love.graphics.rectangle("line", bx + 0.5, by + 0.5, bw - 1, bh - 1, 8, 8)
     use_small()
-    print_engraved("< Back", bx, by + 14, bw, "center", P.ink_light, 0.4)
+    print_engraved(i18n.t("back"), bx, by + 14, bw, "center", P.ink_light, 0.4)
     use_body()
     local oa = menu:press_overlay_alpha_for("back", 0)
     if oa > 0 then
@@ -1563,7 +1580,7 @@ function M.draw_menu(menu, progression, thumbnails, win_w, win_h, display_state)
         print_engraved("JewelSort", 0, 22, win_w, "center", P.ink, 0.4)
         use_small()
         love.graphics.setColor(P.ink_soft[1], P.ink_soft[2], P.ink_soft[3], 0.85)
-        love.graphics.printf("Select a book", 0, 62, win_w, "center")
+        love.graphics.printf(i18n.t("select_book"), 0, 62, win_w, "center")
         use_body()
         local bx, by = menu:badge_rect(win_w, win_h)
         draw_jewel_badge(bx, by, badge_count, pulse_scale)
