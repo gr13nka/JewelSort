@@ -13,6 +13,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Build identity. The short SHA + UTC timestamp gets stamped into the
+# generated index.html / yabridge.js so we (and the player) can look
+# at devtools and be certain which code is actually live on a draft.
+# If the working tree is dirty, append "+dirty" so uncommitted state
+# is visible.
+BUILD_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo 'nogit')"
+if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+    BUILD_SHA="${BUILD_SHA}+dirty"
+fi
+BUILT_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+export BUILD_SHA BUILT_AT
+
 LOVE_TMP="$(mktemp -d)/jewelsort.love"
 trap 'rm -f "$LOVE_TMP"; rmdir "$(dirname "$LOVE_TMP")" 2>/dev/null || true' EXIT
 
@@ -40,6 +52,7 @@ echo "build_web: patching for Yandex Games..."
 
 size_mb=$(du -sm build/web | cut -f1)
 echo "build_web: done. build/web/ is ${size_mb} MB."
+echo "build_web: build-id = ${BUILD_SHA} (${BUILT_AT})"
 
 # Always produce build/jewelsort.zip ready to upload to the Yandex
 # Games console. Zip must be rooted at the build files themselves,

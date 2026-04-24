@@ -1,20 +1,30 @@
 -- platform.lua
 -- Thin façade over host-platform features. On desktop every call is a
 -- no-op (except `locale` which returns the system language). On web
--- (love.js / Emscripten) we bridge to the Yandex Games SDK by writing
--- commands to a virtual-filesystem file (`/__ya_out`) that a small JS
--- poller — injected into index.html by tools/patch_web.sh — reads and
--- dispatches to `ysdk`. Events flowing back (ad closed, cloud payload)
--- arrive via `/__ya_in`, which we drain on every `tick(dt)`.
+-- (love.js / Emscripten) we bridge to the Yandex Games SDK.
 --
--- Design choices worth knowing:
---   • Plain `io.open` against MEMFS paths; Emscripten's virtual FS is
---     synchronously visible to JS as Module.FS, so no async plumbing.
---   • Line-oriented protocol: one command per line, space-separated,
---     escape-free. Payloads (cloud_save) are appended verbatim on the
---     same line after an explicit length prefix.
---   • At most one interstitial and one cloud_load pending at a time;
---     overlapping calls coalesce onto the newest callback.
+-- Transport (asymmetric, dictated by what love.js --compatibility
+-- actually exports on its Module object):
+--   • Lua → JS: Lua calls `print("YA_CMD:<cmd> <args>")`. JS overrides
+--     Module.print, catches the prefix, and routes to ysdk. Plain,
+--     reliable, no file I/O. See `emit()` below + the onLuaPrint
+--     handler in tools/patch_web.sh.
+--   • JS → Lua: JS creates /__ya_in via Module.FS_createDataFile with
+--     single-slot semantics (unlink + create). Lua reads-and-truncates
+--     each frame in `tick()` via `io.open`. Lua's io.open routes
+--     through Emscripten's internal FS just fine — only the JS side
+--     lacks a readFile export, so this direction works.
+--
+-- A previous iteration used a file on both ends, but Module.FS isn't
+-- exposed to JS in this build (only FS_createDataFile / FS_unlink
+-- are exported), so the JS-read half couldn't work. The print-based
+-- Lua→JS path sidesteps that entirely.
+--
+-- The locale is no longer carried through this bridge. It's passed
+-- via Module.arguments as `--lang=<code>` and parsed in main.lua's
+-- love.load — see tools/patch_web.sh. `M.locale()` below is kept as
+-- a desktop fallback and as a soft reader for any code that still
+-- calls it directly.
 --
 -- The only stringly-typed contract shared with the JS side is the
 -- command vocabulary below — keep it in lockstep with patch_web.sh.
@@ -23,22 +33,20 @@ local M = {}
 
 local IS_WEB = love and love.system and love.system.getOS() == "Web"
 
-local OUT_PATH = "/__ya_out"   -- Lua → JS, append-only
 local IN_PATH  = "/__ya_in"    -- JS → Lua, read-and-truncate
-local LOCALE_PATH = "/__ya_locale"  -- JS writes once on init
+local LOCALE_PATH = "/__ya_locale"  -- JS writes once on init (fallback)
 
 -- Single-slot callbacks. Nil when nothing is pending.
 local on_ad_closed = nil
 local on_cloud_loaded = nil
 local cached_locale = nil   -- lazily read from LOCALE_PATH on web
 
+-- Lua → JS command. Prints with the "YA_CMD:" prefix that the JS
+-- side (Module.print override) intercepts. Lua's print adds the
+-- trailing newline automatically; Emscripten flushes per newline.
 local function emit(line)
     if not IS_WEB then return end
-    local f = io.open(OUT_PATH, "a")
-    if f == nil then return end
-    f:write(line)
-    f:write("\n")
-    f:close()
+    print("YA_CMD:" .. line)
 end
 
 function M.is_web()

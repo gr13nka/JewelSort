@@ -335,11 +335,24 @@ function love.load(args)
         love.math.setRandomSeed(os.time())
     end
 
-    -- Locale needs to be set before any module rendering runs. On web
-    -- platform.locale() returns the Yandex user locale; on desktop we
-    -- fall back to English. Unknown languages fall through to English
-    -- inside i18n.set_locale.
-    i18n.set_locale(platform.locale())
+    -- Locale needs to be set before any module rendering runs. The
+    -- web bridge passes it as `--lang=<code>` via Module.arguments
+    -- (see tools/patch_web.sh) because the MEMFS-file path we used
+    -- previously didn't work in love.js --compatibility builds where
+    -- Module.FS isn't exported. CLI args are the only Lua-visible
+    -- channel that's guaranteed reachable before love.load. Desktop
+    -- falls back to platform.locale() which returns "en".
+    local cli_lang = nil
+    if args ~= nil then
+        for i = 1, #args do
+            local a = args[i]
+            if type(a) == "string" and a:sub(1, 7) == "--lang=" then
+                cli_lang = a:sub(8)
+                break
+            end
+        end
+    end
+    i18n.set_locale(cli_lang or platform.locale())
 
     ensure_samples_exist()
     game.boxes = load_boxes()

@@ -19,6 +19,13 @@ cd "$(dirname "$0")/.."
 
 OUT_DIR="build/web"
 
+# Build identity for the deployed artifacts. Falls back to "unknown"
+# if build_web.sh wasn't the caller (e.g. hand-running patch_web for
+# testing). The values get sed'd into the heredoc bodies below so the
+# heredocs themselves stay literal (no $var expansion surprises).
+BUILD_SHA="${BUILD_SHA:-unknown}"
+BUILT_AT="${BUILT_AT:-unknown}"
+
 if [[ ! -d "$OUT_DIR" ]]; then
     echo "patch_web: $OUT_DIR does not exist. Run love.js first." >&2
     exit 1
@@ -34,6 +41,7 @@ cat >"$OUT_DIR/index.html" <<'HTML'
 <!doctype html>
 <html lang="en">
 <head>
+<!-- build-id: @BUILD_SHA@ built @BUILT_AT@ -->
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no,user-scalable=no,viewport-fit=cover">
@@ -73,7 +81,7 @@ cat >"$OUT_DIR/index.html" <<'HTML'
 </head>
 <body>
     <canvas id="loadingCanvas" oncontextmenu="event.preventDefault()"></canvas>
-    <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" style="visibility:hidden"></canvas>
+    <canvas id="canvas" data-build="@BUILD_SHA@" oncontextmenu="event.preventDefault()" tabindex="-1" style="visibility:hidden"></canvas>
 
     <!-- Bridge script is external (not inline) so Yandex's nonce-based
          CSP allows it via `script-src 'self'`. -->
@@ -96,6 +104,12 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
 // strict CSP (which disables `'unsafe-inline'` when a nonce is active).
 
 (function(){
+  // Build identity — first thing we log so devtools confirms the
+  // deployed draft is running this source. If this line doesn't
+  // appear in the console at all, the zip didn't upload or Yandex
+  // is caching an older version.
+  console.info('[yabridge] build @BUILD_SHA@ loaded (@BUILT_AT@)');
+
   // --- Loading splash ------------------------------------------------
   // Animated Canvas2D scene shown until love.js/love.wasm/game.data
   // finish downloading (4-15s on Yandex). Mirrors the core mechanic:
@@ -409,53 +423,46 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
   // second time.
   var loadingReadyFired = false;
 
-  // Emscripten + Davidobot love.js in --compatibility mode does not
-  // export FS onto Module. It does, however, leak FS as a top-level
-  // global inside the love.js bundle. Try both; cache the first
-  // non-null resolution and log once for diagnostics.
-  var _fsCached = null, _fsResolvedOnce = false;
-  function getFS(){
-    if (_fsCached) return _fsCached;
-    var candidates = [];
-    if (typeof FS !== 'undefined' && FS) candidates.push(['global FS', FS]);
-    if (typeof window !== 'undefined' && window.FS) candidates.push(['window.FS', window.FS]);
-    if (window.Module && window.Module.FS) candidates.push(['Module.FS', window.Module.FS]);
-    for (var i = 0; i < candidates.length; i++){
-      var fs = candidates[i][1];
-      if (fs && typeof fs.writeFile === 'function' && typeof fs.readFile === 'function'){
-        if (!_fsResolvedOnce){
-          console.info('[yabridge] FS resolved via', candidates[i][0]);
-          _fsResolvedOnce = true;
-        }
-        _fsCached = fs;
-        return fs;
-      }
-    }
-    return null;
-  }
-
-  function tryRead(path){
-    var fs = getFS();
-    if (!fs) return null;
-    try { return fs.readFile(path, { encoding: 'utf8' }); }
-    catch(e){ return null; }
-  }
-  function tryWrite(path, data){
-    var fs = getFS();
-    if (!fs){
-      if (!tryWrite._warned){
-        console.warn('[yabridge] no FS available — bridge calls will be dropped. path=', path);
-        tryWrite._warned = true;
+  // ------------------------------------------------------------------
+  // Bridge I/O — uses only what the love.js build actually exports.
+  //
+  // love.js --compatibility does NOT expose Module.FS (so readFile /
+  // writeFile are unreachable from JS). It DOES export:
+  //   Module.FS_createDataFile(parent, name, data, r, w, own)
+  //   Module.FS_unlink(path)
+  //   Module.print / Module.printErr  (Lua's print() flows here)
+  //
+  // Architecture: fire-and-forget in both directions.
+  //   Lua → JS: Lua prints "YA_CMD:<cmd> <rest>". Module.print below
+  //             intercepts the prefix and dispatches.
+  //   JS → Lua: writeIn() replaces /__ya_in (unlink+create). Lua
+  //             reads-and-truncates in platform.tick() each frame.
+  //
+  // writeIn is single-slot (not append), which means callbacks that
+  // fire close together could overwrite each other. The two
+  // callback types in flight (ad_closed, cloud_loaded) never run
+  // concurrently, so single-slot is fine.
+  function writeIn(line){
+    if (!window.Module || typeof Module.FS_createDataFile !== 'function') {
+      if (!writeIn._warned){
+        console.warn('[yabridge] FS_createDataFile not exported — JS→Lua events will be dropped');
+        writeIn._warned = true;
       }
       return false;
     }
-    try { fs.writeFile(path, data); return true; }
-    catch(e){ console.warn('[yabridge] write failed', path, e); return false; }
+    try { if (typeof Module.FS_unlink === 'function') Module.FS_unlink(IN); } catch(_){}
+    try {
+      Module.FS_createDataFile('/', '__ya_in', line + '\n', true, true, true);
+      return true;
+    } catch(e){
+      console.warn('[yabridge] writeIn failed', e);
+      return false;
+    }
   }
-  function appendIn(line){
-    var prev = tryRead(IN) || '';
-    tryWrite(IN, prev + line + '\n');
-  }
+
+  // Alias kept for dispatch() call-sites that were named for the
+  // previous append-semantics. Single-slot is fine; see writeIn().
+  function appendIn(line){ return writeIn(line); }
 
   function parseCloudSaveLine(rest){
     // "<len> <blob...>"; <blob> is exactly <len> bytes so the protocol
@@ -518,21 +525,21 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
     }
   }
 
-  function tick(){
-    if (!window.Module || !Module.FS) return;
-    var buf = tryRead(OUT);
-    if (!buf) return;
-    tryWrite(OUT, '');
-    var lines = buf.split('\n');
-    for (var i = 0; i < lines.length; i++){
-      var line = lines[i];
-      if (!line) continue;
-      var sp = line.indexOf(' ');
-      var cmd, rest;
-      if (sp < 0) { cmd = line; rest = ''; }
-      else { cmd = line.substring(0, sp); rest = line.substring(sp + 1); }
-      dispatch(cmd, rest);
-    }
+  // Intercept Lua's print() output. Anything prefixed "YA_CMD:" is
+  // a bridge command (see src/platform.lua:emit()); everything else
+  // routes to console.log so regular debug prints still surface.
+  // Installed on Module.print below.
+  function onLuaPrint(text){
+    if (typeof text !== 'string') { console.log(text); return; }
+    var body = text;
+    if (body.charAt(0) === ' ') body = body.slice(1);   // emscripten sometimes prefixes a space
+    if (body.indexOf('YA_CMD:') !== 0) { console.log(text); return; }
+    var payload = body.substring(7);
+    var sp = payload.indexOf(' ');
+    var cmd, rest;
+    if (sp < 0) { cmd = payload; rest = ''; }
+    else { cmd = payload.substring(0, sp); rest = payload.substring(sp + 1); }
+    dispatch(cmd, rest);
   }
 
   function connectSdk(){
@@ -542,14 +549,15 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
     }
     YaGames.init().then(function(sdk){
       ysdk = sdk;
+      // Locale is now driven by the URL-param → Module.arguments
+      // --lang=<code> path (see Module.arguments above). We don't
+      // need to write ysdk.environment.i18n.lang anywhere; just log
+      // it for diagnostics in case URL and ysdk disagree.
+      var sdkLang = null;
       try {
-        var lang = (sdk.environment && sdk.environment.i18n && sdk.environment.i18n.lang) || 'en';
-        // Only overwrite /__ya_locale if Module.FS is live; during the
-        // splash phase the FS may not be mounted yet, in which case
-        // preRun already queued the URL-param lang.
-        if (window.Module && Module.FS) tryWrite(LOCALE, String(lang));
-      } catch(e){ if (window.Module && Module.FS) tryWrite(LOCALE, 'en'); }
-      console.info('YaGames ready');
+        sdkLang = sdk.environment && sdk.environment.i18n && sdk.environment.i18n.lang;
+      } catch(e){}
+      console.info('[yabridge] YaGames ready; URL lang=' + LANG + ', ysdk lang=' + sdkLang);
       // Dismiss Yandex's preloader overlay ASAP so the custom splash
       // below becomes visible. Safe to call before love.wasm finishes
       // downloading — Yandex just hides the preloader, it doesn't gate
@@ -570,25 +578,31 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
 
   // --- Emscripten / Love module setup --------------------------------
   window.Module = {
-    arguments: ['./game.love'],
+    // The locale travels to Lua through love.load(args) instead of
+    // the MEMFS bridge — passing --lang=<code> here is bullet-proof
+    // because Module.arguments is the only Lua-visible channel that
+    // needs no FS, no async, and no timing window. See main.lua
+    // love.load() which parses the prefix.
+    arguments: ['./game.love', '--lang=' + LANG],
     // preRun fires after Emscripten's FS is mounted but before main()
     // returns, which is before Lua's love.load runs. Writing the
     // locale file here means platform.locale() sees a real value on
     // first read, instead of falling back to "en" because the
     // YaGames.init() promise hadn't resolved yet.
     preRun: [function(){
-      var lang = 'en';
+      // Locale is passed via Module.arguments (--lang=<code>) above,
+      // so Lua no longer depends on /__ya_locale. We still drop the
+      // file in MEMFS as a fallback for any code that reads it,
+      // using the exported FS_createDataFile (Module.FS isn't).
+      if (typeof Module.FS_createDataFile !== 'function') {
+        console.warn('[yabridge] preRun: FS_createDataFile not exported; skipping /__ya_locale');
+        return;
+      }
       try {
-        var q = new URLSearchParams(location.search).get('lang');
-        if (q) lang = String(q).toLowerCase().slice(0, 2);
-      } catch(e){}
-      // Route through getFS() fallback chain — Module.FS isn't
-      // exported in this build.
-      var ok = tryWrite('/__ya_locale', lang);
-      if (ok) {
-        console.info('[yabridge] preRun wrote locale=' + lang);
-      } else {
-        console.warn('[yabridge] preRun could not write locale=' + lang + ' (no FS)');
+        Module.FS_createDataFile('/', '__ya_locale', LANG, true, true, true);
+        console.info('[yabridge] preRun wrote locale=' + LANG + ' (via FS_createDataFile)');
+      } catch(e){
+        console.warn('[yabridge] preRun FS_createDataFile threw', e);
       }
     }],
     // Belt-and-suspenders hide of the splash + canvas reveal. Some
@@ -605,25 +619,11 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
       if (lc) lc.style.display = 'none';
       var c = document.getElementById('canvas');
       if (c) c.style.visibility = 'visible';
-      // If preRun couldn't write the locale because FS wasn't yet
-      // reachable, retry now via the getFS() fallback chain.
-      var have = tryRead('/__ya_locale');
-      if (!have) {
-        var lang = 'en';
-        try {
-          var q = new URLSearchParams(location.search).get('lang');
-          if (q) lang = String(q).toLowerCase().slice(0, 2);
-        } catch(e){}
-        if (tryWrite('/__ya_locale', lang)) {
-          console.info('[yabridge] onRuntimeInitialized re-wrote locale=' + lang);
-        } else {
-          console.warn('[yabridge] onRuntimeInitialized still no FS; locale stuck at default');
-        }
-      } else {
-        console.info('[yabridge] onRuntimeInitialized sees locale=' + have);
-      }
     },
     INITIAL_MEMORY: 67108864,
+    // Lua's print() → Module.print → onLuaPrint() intercepts the
+    // YA_CMD: prefix and routes the rest through dispatch().
+    print: onLuaPrint,
     printErr: console.error.bind(console),
     canvas: (function(){
       var c = document.getElementById('canvas');
@@ -646,10 +646,8 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
         stopRaf();
         document.getElementById('loadingCanvas').style.display = 'none';
         document.getElementById('canvas').style.visibility = 'visible';
-        // SDK was connected at script start; now start polling Lua
-        // commands. Idempotent-safe to enter this branch more than
-        // once because setInterval is guarded by remainingDependencies.
-        setInterval(tick, 50);
+        // No poller needed: Lua → JS commands flow through
+        // Module.print → onLuaPrint instantly, no 50ms latency.
       }
     },
     totalDependencies: 0,
@@ -679,4 +677,12 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
 })();
 JS
 
-echo "patch_web: wrote $OUT_DIR/index.html + $OUT_DIR/yabridge.js"
+# Substitute the build-id placeholders into both generated artifacts.
+# We keep the heredoc bodies literal (`<<'HTML'`/`<<'JS'`) so neither
+# shell nor sed special-chars leak in, then sed the markers in a
+# separate pass. Using '|' as the sed delimiter avoids conflicts with
+# ':' and '/' that might appear in timestamps.
+sed -i "s|@BUILD_SHA@|${BUILD_SHA}|g; s|@BUILT_AT@|${BUILT_AT}|g" \
+    "$OUT_DIR/index.html" "$OUT_DIR/yabridge.js"
+
+echo "patch_web: wrote $OUT_DIR/index.html + $OUT_DIR/yabridge.js (build ${BUILD_SHA})"
