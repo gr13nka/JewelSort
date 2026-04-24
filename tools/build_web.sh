@@ -19,7 +19,7 @@ trap 'rm -f "$LOVE_TMP"; rmdir "$(dirname "$LOVE_TMP")" 2>/dev/null || true' EXI
 echo "build_web: packing .love archive..."
 zip -qr "$LOVE_TMP" \
     main.lua conf.lua \
-    src/ levels/ assets/ \
+    src/ levels/ assets/ locale/ \
     tools/make_samples.lua \
     -x '*.pyc' -x '__pycache__/*'
 
