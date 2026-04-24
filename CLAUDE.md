@@ -9,7 +9,9 @@ means "no cell here."
 ## Run / build
 
 - Desktop: `love .`
-- Web: `npx love.js . build/web --title "JewelSort"`
+- Web: `./tools/build_web.sh` — packs a `.love`, runs `love.js
+  --compatibility`, then calls `./tools/patch_web.sh` to overwrite the
+  generated `index.html` + `yabridge.js` with Yandex-CSP-safe versions.
 - Reshuffle current level: press **R**. Next level: **N**. Quit: **Esc**.
 
 ## Core mechanic
@@ -55,8 +57,11 @@ means "no cell here."
 
 ## Web-build constraints (hard)
 
-These are non-negotiable because love.js runs Lua through Fengari on a
-small JS stack with incomplete `goto` support:
+The Yandex target uses **Davidobot's love.js** (Emscripten + WebAssembly,
+LÖVE 11.5) built with `--compatibility`. The `Fengari` note in earlier
+revisions of this doc was wrong — there is no Fengari involved. The
+remaining hygiene rules still apply because they're cheap and help
+every web target:
 
 - **Zero `goto` statements** in any `.lua` file. Use early returns, break,
   or extracted helpers. Verify with
@@ -65,6 +70,113 @@ small JS stack with incomplete `goto` support:
   with a head index.
 - No `os.execute`, `io.popen`, FFI, `love.thread`, or screen-capture
   callbacks. All asset access goes through `love.filesystem`.
+
+## Yandex Games deployment (status + architecture)
+
+The game targets `yandex.ru/games/app/522978` as a developer draft.
+A lot of decisions here are load-bearing and non-obvious — read before
+touching `tools/patch_web.sh`, `src/platform.lua`, `src/i18n.lua`, or
+the font-loading in `src/render.lua`.
+
+### Build pipeline
+
+```
+./tools/build_web.sh
+  → zips main.lua/conf.lua/src/levels/assets/locale → /tmp/*.love
+  → runs `npx love.js --compatibility` → build/web/{game.js,game.data,love.js,love.wasm}
+  → ./tools/patch_web.sh overwrites build/web/{index.html,yabridge.js}
+  → zips build/web → build/jewelsort.zip   (upload this to the Yandex console)
+```
+
+Every build stamps `BUILD_SHA` (short git sha + `+dirty` if uncommitted)
+and `BUILT_AT` (UTC ISO) into three places so we can confirm which
+code is actually deployed:
+
+1. `<!-- build-id: <sha> built <ts> -->` in `index.html <head>`
+2. `<canvas data-build="<sha>">` attribute (visible in devtools Elements)
+3. `console.info('[yabridge] build <sha> loaded (<ts>)')` as the very
+   first statement in `yabridge.js`
+
+**If you don't see the `[yabridge] build …` log in devtools, the zip
+did not deploy.** Check the Yandex console's build list — uploads may
+require a separate "set as active draft" action.
+
+### What the love.js build actually exports
+
+`--compatibility` mode (needed because Yandex's host doesn't set
+COOP+COEP, so SharedArrayBuffer is unavailable) exposes a specific
+subset on `window.Module`:
+
+- `Module["arguments"]` — set before `Love(Module)`; LÖVE reads as `love.load(args)`
+- `Module["FS_createDataFile"]`, `Module["FS_unlink"]`, `Module["FS_createPath"]`
+- `Module["onRuntimeInitialized"]`, `Module["print"]`, `Module["printErr"]`
+- **Not exported**: `Module.FS`, `Module.FS.readFile`, `Module.FS.writeFile`.
+  Prior bridge versions tried to use these and failed silently. Do not
+  reintroduce them.
+
+### SDK bridge architecture (asymmetric on purpose)
+
+- **Lua → JS**: Lua emits `print("YA_CMD:<cmd> <args>")`. JS overrides
+  `Module.print` (see `onLuaPrint` in `yabridge.js`), intercepts the
+  `YA_CMD:` prefix, and dispatches to `ysdk.*`. Non-prefixed lines fall
+  through to `console.log`.
+- **JS → Lua**: JS writes events to `/__ya_in` via
+  `Module.FS_unlink` + `Module.FS_createDataFile` (single-slot). Lua
+  reads via `io.open` in `src/platform.lua:tick()` each frame. Lua-side
+  FS access works; only the JS side lacks readFile.
+- **Locale**: uses neither channel. Passed as `--lang=<code>` in
+  `Module.arguments` (set synchronously from `?lang=` URL param in
+  `yabridge.js`) and parsed in `main.lua:love.load`.
+
+### Russian localization
+
+- Strings in `locale/{en,ru}.lua` via `src/i18n.lua`
+- `i18n.t()` for plain strings, `i18n.t_plural(key, n)` for CLDR plural
+  forms (Russian needs `one/few/many`)
+- **Cyrillic font**: `assets/fonts/Rubik-Regular.ttf` shipped as an
+  explicit fallback. LÖVE's built-in default font would work in theory,
+  but the love.js `--compatibility` build strips the default font
+  table, so fallbacks against `newFont(SIZE)` (no path) render Cyrillic
+  as invisible zero-width glyphs. Bundling Rubik is the only reliable
+  path; see `src/render.lua:font_body/font_small`.
+
+### Publishing gate
+
+Yandex moderation requires:
+
+- `features.LoadingAPI.ready()` fires — handled early in `yabridge.js`
+  `connectSdk()` so Yandex's preloader gets out of the way while the
+  game's own splash animates
+- `features.GameplayAPI.start/stop` wraps each puzzle session
+- Game pauses (`game.paused = true`) and audio mutes during fullscreen
+  ads — we don't ship audio, and `love.update` is gated on the flag
+- ≥10 min gameplay, no crashes on resize — the CSS letterbox
+  (`min(100vw, calc(100vh * 9 / 16))`) handles resize with no Lua-side
+  cooperation; LÖVE stays at its `conf.lua` 540×960 buffer
+
+See `.claude/plans/vectorized-twirling-squid.md` for the most recent
+deployment postmortem.
+
+## Web loading splash (pre-Lua)
+
+The animated splash shown while `love.js` / `love.wasm` / `game.data`
+download lives in `tools/patch_web.sh` as a heredoc that writes
+`build/web/yabridge.js`. It runs in plain Canvas2D **before Lua is
+alive**, so:
+
+- **Palette is duplicated.** The splash can't `require` `src/wood.lua`;
+  its `PAL` / `JEWELS` tables in yabridge.js are hand-copied hex. If
+  you retune `wood.palette`, re-tune the splash too or it'll read as a
+  different game.
+- **Strings are duplicated.** The `STRINGS` table (en/ru "Loading…")
+  can't pull from `locale/*.lua` — those are inside `game.data`, which
+  is the thing we're waiting on. Keep the two strings short and
+  re-sync on any localization pass.
+- **Locale comes from the URL.** `?lang=xx` query param first (Yandex
+  always embeds with it), `navigator.language` fallback. The Lua-side
+  locale read via `/__ya_locale` only arrives post-splash.
+- **Single `rAF` loop**, canceled in `Module.setStatus('')` when
+  `remainingDependencies === 0`. Don't leak it past the teardown.
 
 ## UI / visuals
 
@@ -109,6 +221,9 @@ src/render.lua          grid, holes, jewels, lock rings, shelf slots,
                         shelf-count label, flash text, win overlay
 tools/make_samples.lua  in-engine sample generator (runs on empty levels/)
 tools/make_samples.py   pure-stdlib repo-seeding PNG generator
+tools/build_web.sh      packs .love, runs love.js --compatibility, patches
+tools/patch_web.sh      writes build/web/{index.html, yabridge.js}; holds
+                        the animated pre-Lua loading splash as a heredoc
 levels/*.png            source-of-truth level data
 ```
 
