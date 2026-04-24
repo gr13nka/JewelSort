@@ -512,15 +512,51 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
     // first read, instead of falling back to "en" because the
     // YaGames.init() promise hadn't resolved yet.
     preRun: [function(){
+      var lang = 'en';
       try {
-        var lang = 'en';
-        try {
-          var q = new URLSearchParams(location.search).get('lang');
-          if (q) lang = String(q).toLowerCase().slice(0, 2);
-        } catch(e){}
+        var q = new URLSearchParams(location.search).get('lang');
+        if (q) lang = String(q).toLowerCase().slice(0, 2);
+      } catch(e){}
+      try {
         Module.FS.writeFile('/__ya_locale', lang);
-      } catch(e){ /* FS may not be ready on very old emsdk */ }
+        console.info('[yabridge] preRun wrote locale=' + lang + ' to /__ya_locale');
+      } catch(e){
+        console.warn('[yabridge] preRun FS write FAILED:', e, 'lang=', lang);
+      }
     }],
+    // Belt-and-suspenders hide of the splash + canvas reveal. Some
+    // builds don't drive monitorRunDependencies(0) → setStatus('')
+    // cleanly, so the setStatus path alone can leave #loadingCanvas
+    // visible forever (shows as the splash art bleeding through the
+    // letterbox gutters). onRuntimeInitialized fires deterministically
+    // once the WASM runtime is up, which is always before the first
+    // love.load frame renders.
+    onRuntimeInitialized: function(){
+      console.info('[yabridge] onRuntimeInitialized — hiding splash, revealing canvas');
+      try { stopRaf(); } catch(e){}
+      var lc = document.getElementById('loadingCanvas');
+      if (lc) lc.style.display = 'none';
+      var c = document.getElementById('canvas');
+      if (c) c.style.visibility = 'visible';
+      // Also verify the locale write survived. If it failed in
+      // preRun, re-attempt from here (FS is definitely live now).
+      try {
+        var have = Module.FS.readFile('/__ya_locale', { encoding: 'utf8' });
+        if (!have) {
+          var lang = 'en';
+          try {
+            var q = new URLSearchParams(location.search).get('lang');
+            if (q) lang = String(q).toLowerCase().slice(0, 2);
+          } catch(e){}
+          Module.FS.writeFile('/__ya_locale', lang);
+          console.info('[yabridge] onRuntimeInitialized re-wrote locale=' + lang);
+        } else {
+          console.info('[yabridge] onRuntimeInitialized sees locale=' + have);
+        }
+      } catch(e){
+        console.warn('[yabridge] onRuntimeInitialized locale check FAILED:', e);
+      }
+    },
     INITIAL_MEMORY: 67108864,
     printErr: console.error.bind(console),
     canvas: (function(){
