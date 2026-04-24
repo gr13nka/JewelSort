@@ -346,6 +346,12 @@ function love.load(args)
     game.progress = progression.load()
     preload_puzzles()
     game.menu = Menu.new(game.boxes, game.progress)
+
+    -- Kick off an async cloud-save sync. The menu and progression
+    -- table are shared by reference, so if the cloud has more
+    -- progress the merge mutates `game.progress` in place and the
+    -- next draw reflects it. On desktop this is a no-op.
+    progression.cloud_sync(game.progress)
     game.particles = Particles.new()
     game.confetti = Particles.new()
 
