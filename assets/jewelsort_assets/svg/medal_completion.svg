@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 176" width="128" height="176">
+  <defs>
+    <filter id="medalShadow" x="-10%" y="-5%" width="120%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <g transform="rotate(-7 64 64)" filter="url(#medalShadow)">
+    <!-- ribbon tails -->
+    <path d="M 36 76 L 24 160 L 44 148 L 48 100 Z" fill="#8E2A2A"/>
+    <path d="M 28 152 L 24 160 L 38 152 Z" fill="#5C1718"/>
+    <path d="M 92 76 L 104 160 L 84 148 L 80 100 Z" fill="#8E2A2A"/>
+    <path d="M 100 152 L 104 160 L 90 152 Z" fill="#5C1718"/>
+    <path d="M 38 80 L 34 116 L 38 116 Z" fill="#FFFFFF" opacity="0.18"/>
+    <path d="M 90 80 L 94 116 L 90 116 Z" fill="#FFFFFF" opacity="0.18"/>
+
+    <!-- medallion outer dark ring -->
+    <circle cx="64" cy="64" r="52" fill="#6a4f15"/>
+
+    <!-- 12 scallop bumps -->
+    <circle cx="64" cy="12" r="7"  fill="#6a4f15"/>
+    <circle cx="90" cy="19" r="7"  fill="#6a4f15"/>
+    <circle cx="109" cy="38" r="7" fill="#6a4f15"/>
+    <circle cx="116" cy="64" r="7" fill="#6a4f15"/>
+    <circle cx="109" cy="90" r="7" fill="#6a4f15"/>
+    <circle cx="90" cy="109" r="7" fill="#6a4f15"/>
+    <circle cx="64" cy="116" r="7" fill="#6a4f15"/>
+    <circle cx="38" cy="109" r="7" fill="#6a4f15"/>
+    <circle cx="19" cy="90" r="7"  fill="#6a4f15"/>
+    <circle cx="12" cy="64" r="7"  fill="#6a4f15"/>
+    <circle cx="19" cy="38" r="7"  fill="#6a4f15"/>
+    <circle cx="38" cy="19" r="7"  fill="#6a4f15"/>
+
+    <!-- gold face -->
+    <circle cx="64" cy="64" r="44" fill="#D4A845"/>
+    <ellipse cx="50" cy="48" rx="18" ry="12" fill="#F1CB6E" opacity="0.6"/>
+
+    <!-- inner darker ring -->
+    <circle cx="64" cy="64" r="34" fill="none" stroke="#8a6520" stroke-width="3"/>
+
+    <!-- 5-point star -->
+    <polygon points="64,36 71.4,57 94,57 76,70 83,92 64,78 45,92 52,70 34,57 56.6,57"
+             fill="#7A5518"/>
+    <polygon points="64,36 67,48 71.4,57 64,57" fill="#F1CB6E" opacity="0.5"/>
+  </g>
+</svg>

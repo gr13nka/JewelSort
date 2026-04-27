@@ -133,12 +133,18 @@ subset on `window.Module`:
 - Strings in `locale/{en,ru}.lua` via `src/i18n.lua`
 - `i18n.t()` for plain strings, `i18n.t_plural(key, n)` for CLDR plural
   forms (Russian needs `one/few/many`)
-- **Cyrillic font**: `assets/fonts/Rubik-Regular.ttf` shipped as an
-  explicit fallback. LÖVE's built-in default font would work in theory,
+- **Font with Cyrillic**: `assets/fonts/Alegreya-Bold.ttf` is the
+  single bundled face for both locales — Alegreya has full Latin +
+  Cyrillic coverage, and the Bold weight reads cleanly on painted
+  leather and gold-foil titles where Regular looks too thin. No
+  fallback chain is needed.
+  Background: LÖVE's built-in default font would work for Latin-only,
   but the love.js `--compatibility` build strips the default font
-  table, so fallbacks against `newFont(SIZE)` (no path) render Cyrillic
-  as invisible zero-width glyphs. Bundling Rubik is the only reliable
-  path; see `src/render.lua:font_body/font_small`.
+  table, so any face with partial Cyrillic coverage rendered Russian
+  as invisible zero-width glyphs. Shipping a single full-coverage TTF
+  sidesteps that. `Alegreya-Regular.ttf`, `Rubik-Regular.ttf`, and
+  `FredokaOne-Regular.ttf` remain in `assets/fonts/` for now but are
+  unreferenced from code; see `src/render.lua:font_body/font_small`.
 
 ### Publishing gate
 
@@ -190,8 +196,8 @@ Key invariants (so the aesthetic doesn't drift between edits):
 - **Saturation discipline.** The only saturated pixels on screen should
   be jewels, their target rings, medals, the jewel badge, and the red
   flash text. All chrome is wood / parchment / ink / foil.
-- **Two font sizes only:** 32 px body, 22 px small — both Fredoka One
-  from `assets/fonts/FredokaOne-Regular.ttf`. Adding a third size
+- **Two font sizes only:** 32 px body, 22 px small — both Alegreya
+  Bold from `assets/fonts/Alegreya-Bold.ttf`. Adding a third size
   requires updating `UI-SPEC.md`.
 - **Text goes through `print_engraved`** (in `render.lua`), not raw
   `love.graphics.print` — every label carries its 1px engraved shadow.

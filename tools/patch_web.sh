@@ -159,12 +159,24 @@ cat >"$OUT_DIR/yabridge.js" <<'JS'
     {gx:2,gy:2}, {gx:1,gy:2}, {gx:0,gy:2},
     {gx:0,gy:1}
   ];
-  var BOARD_TARGETS = [0,1,2,3,0,1,2,3];
-  // Scramble permutation: jewel color at slot i = BOARD_TARGETS[SCRAMBLE[i]].
-  // Cyclic shift by 1 gives zero fixed points against BOARD_TARGETS.
-  var SCRAMBLE = [1,2,3,4,5,6,7,0];
+  // Targets around the ring — each color twice but arranged so that
+  // SWAP pairs (see below) always connect cells of DIFFERENT colors.
+  // Previous layout [0,1,2,3,0,1,2,3] had same-color opposites, so the
+  // swap animation just shuffled identical jewels around — visually
+  // indistinguishable from doing nothing.
+  //
+  //   TL=ruby    TC=emer   TR=sapp
+  //   ML=ruby    (empty)   MR=amber
+  //   BL=amber   BC=sapp   BR=emer
+  var BOARD_TARGETS = [0, 1, 2, 3, 1, 2, 3, 0];
+  // Scramble — rotate jewels by 4 around the ring. Because BOARD_TARGETS
+  // has no 4-step period, every slot starts mismatched AND each of the
+  // four SWAPS below moves two differently-colored jewels.
+  var SCRAMBLE = [4, 5, 6, 7, 0, 1, 2, 3];
   // Swap script: each pair (a,b) swaps jewels between those slots.
-  // Four swaps restore the solved state from the scrambled state.
+  // (0,4)=TL↔BR diagonal, (2,6)=TR↔BL anti-diagonal, (1,5) vertical,
+  // (3,7) horizontal — four dramatic cross-board moves that each fix
+  // two cells.
   var SWAPS = [[0,4],[1,5],[2,6],[3,7]];
 
   // Timing

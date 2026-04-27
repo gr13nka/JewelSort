@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 360" width="300" height="360">
+  <defs>
+    <linearGradient id="papercard_m_locked" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#E5D4B0"/>
+      <stop offset="100%" stop-color="#B8966C"/>
+    </linearGradient>
+    <linearGradient id="framecard_m_locked" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#5A3F22"/>
+      <stop offset="100%" stop-color="#3D2814"/>
+    </linearGradient>
+    <filter id="cardShadowcard_m_locked" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <g filter="url(#cardShadowcard_m_locked)">
+    <!-- Paper card -->
+    <rect x="10" y="10" width="280" height="340" rx="7" fill="url(#papercard_m_locked)"/>
+    <!-- Top-edge highlight on paper -->
+    <rect x="14" y="13" width="272" height="2" rx="1" fill="#FFFFFF" opacity="0.35"/>
+    <!-- Inset frame for pixel art -->
+    <rect x="22" y="22" width="256" height="260" rx="4" fill="url(#framecard_m_locked)"/>
+    <!-- Top inner shadow on frame -->
+    <rect x="22" y="22" width="256" height="2" fill="#000" opacity="0.45"/>
+  </g>
+  <svg x="60" y="62" width="179" height="179" viewBox="0 0 16 16">
+    <g fill="#E5D4B0" shape-rendering="crispEdges">
+      <rect x="5" y="1" width="6" height="1"/>
+      <rect x="4" y="2" width="2" height="1"/>
+      <rect x="10" y="2" width="2" height="1"/>
+      <rect x="3" y="3" width="2" height="1"/>
+      <rect x="11" y="3" width="2" height="1"/>
+      <rect x="11" y="4" width="2" height="1"/>
+      <rect x="10" y="5" width="2" height="1"/>
+      <rect x="9" y="6" width="2" height="1"/>
+      <rect x="8" y="7" width="2" height="1"/>
+      <rect x="7" y="8" width="2" height="4"/>
+      <rect x="7" y="13" width="2" height="2"/>
+    </g>
+    <g fill="#7A5F32" opacity="0.55" shape-rendering="crispEdges">
+      <rect x="11" y="2" width="1" height="1"/>
+      <rect x="12" y="3" width="1" height="1"/>
+      <rect x="12" y="4" width="1" height="1"/>
+      <rect x="11" y="5" width="1" height="1"/>
+      <rect x="10" y="6" width="1" height="1"/>
+      <rect x="9" y="7" width="1" height="1"/>
+      <rect x="8" y="8" width="1" height="4"/>
+      <rect x="8" y="13" width="1" height="2"/>
+    </g>
+  </svg>
+</svg>

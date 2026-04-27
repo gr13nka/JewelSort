@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" width="44" height="44">
+  <defs>
+    <radialGradient id="pinteal" cx="35%" cy="30%" r="0.6">
+      <stop offset="0%" stop-color="#B0E0F0"/>
+      <stop offset="60%" stop-color="#4A7585"/>
+      <stop offset="100%" stop-color="#173544"/>
+    </radialGradient>
+    <filter id="pinShadowteal" x="-15%" y="-5%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <g filter="url(#pinShadowteal)">
+    <circle cx="22" cy="22" r="18" fill="url(#pinteal)"/>
+    <!-- inner rim shadow -->
+    <circle cx="22" cy="22" r="18" fill="none" stroke="#173544" stroke-width="1.5" opacity="0.5"/>
+    <!-- top sparkle -->
+    <ellipse cx="15" cy="14" rx="5.5" ry="3.5" fill="#FFFFFF" opacity="0.55"/>
+    <ellipse cx="14" cy="13" rx="2" ry="1.4" fill="#FFFFFF" opacity="0.85"/>
+  </g>
+</svg>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+  <defs>
+    <linearGradient id="woodMain" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D89456"/>
+      <stop offset="60%" stop-color="#9F6638"/>
+      <stop offset="100%" stop-color="#583519"/>
+    </linearGradient>
+    <radialGradient id="woodHl" cx="30%" cy="20%" r="0.7">
+      <stop offset="0%" stop-color="#FFE6B4" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#FFE6B4" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Wood grain: dense dark stripes (2px every 12px = original 1px every 6px at 2x) -->
+    <pattern id="grainDark" patternUnits="userSpaceOnUse" width="12" height="200">
+      <rect x="0" y="0" width="2" height="200" fill="#3C1E0A" opacity="0.18"/>
+    </pattern>
+    <!-- Wood grain: sparser light stripes (4px every 26px = original 2px every 13px at 2x) -->
+    <pattern id="grainLight" patternUnits="userSpaceOnUse" width="26" height="200">
+      <rect x="0" y="0" width="4" height="200" fill="#FFE6B4" opacity="0.08"/>
+    </pattern>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#woodMain)"/>
+  <rect width="1080" height="1920" fill="url(#woodHl)"/>
+  <rect width="1080" height="1920" fill="url(#grainDark)"/>
+  <rect width="1080" height="1920" fill="url(#grainLight)"/>
+</svg>

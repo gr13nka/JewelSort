@@ -13,40 +13,23 @@ local P = wood.palette
 
 local FLASH_COLOR = { 0.80, 0.20, 0.18 }
 
--- Fredoka One (Google Fonts, SIL OFL) — rounded warm display font that
--- matches the cozy puzzle / Picross 3D vibe. 2.5x over LÖVE default (~13 -> 32).
--- Fredoka One has *partial* Cyrillic coverage, so for the Russian locale
--- (Yandex Games' primary market) we register an explicit full-Cyrillic
--- fallback: Rubik-Regular (Google Fonts, SIL OFL) — same rounded
--- humanist feel as Fredoka, so mixed runs still read as one family.
--- An earlier version tried using LÖVE's built-in default font as the
--- fallback, but the love.js --compatibility build for Yandex strips
--- the default font table, so Cyrillic characters rendered invisible.
--- Shipping our own TTF is the only reliable path.
-local FONT_PATH = "assets/fonts/FredokaOne-Regular.ttf"
-local FONT_CYR_PATH = "assets/fonts/Rubik-Regular.ttf"
+-- Alegreya Bold (Huerta Tipográfica, SIL OFL) — humanist serif text
+-- face with full Latin + Cyrillic coverage. Bold weight holds up on
+-- painted leather book covers and gold-foil treatments where the
+-- Regular weight reads too thin. No Cyrillic fallback is needed —
+-- Alegreya covers Russian directly, which sidesteps the love.js
+-- --compatibility build's stripped default-font table that previously
+-- broke Cyrillic for partial-coverage faces. The Regular static
+-- (`Alegreya-Regular.ttf`) sits in `assets/fonts/` alongside this
+-- file but is currently unreferenced.
+local FONT_PATH = "assets/fonts/Alegreya-Bold.ttf"
 local FONT_BODY_SIZE = 32
 local FONT_SMALL_SIZE = 22
 local _font_body, _font_small
 
--- Guard the fallback so a missing font file (dev environment without
--- the Cyrillic asset) doesn't crash. LÖVE's getInfo tells us whether
--- the file is readable before we ask newFont to parse it.
-local function new_cyr_fallback(size)
-    if love.filesystem == nil or love.filesystem.getInfo == nil then return nil end
-    if not love.filesystem.getInfo(FONT_CYR_PATH) then return nil end
-    local ok, f = pcall(love.graphics.newFont, FONT_CYR_PATH, size)
-    if ok then return f end
-    return nil
-end
-
 local function font_body()
     if _font_body == nil then
         _font_body = love.graphics.newFont(FONT_PATH, FONT_BODY_SIZE)
-        if _font_body.setFallbacks then
-            local cyr = new_cyr_fallback(FONT_BODY_SIZE)
-            if cyr ~= nil then _font_body:setFallbacks(cyr) end
-        end
     end
     return _font_body
 end
@@ -54,10 +37,6 @@ end
 local function font_small()
     if _font_small == nil then
         _font_small = love.graphics.newFont(FONT_PATH, FONT_SMALL_SIZE)
-        if _font_small.setFallbacks then
-            local cyr = new_cyr_fallback(FONT_SMALL_SIZE)
-            if cyr ~= nil then _font_small:setFallbacks(cyr) end
-        end
     end
     return _font_small
 end
@@ -90,6 +69,86 @@ local function jewel_image()
     return _jewel_img
 end
 
+local BACKGROUND_IMAGE_PATH = "assets/wooden_background.png"
+local _background_img
+local function background_image()
+    if _background_img == nil then
+        _background_img = love.graphics.newImage(BACKGROUND_IMAGE_PATH)
+        _background_img:setFilter("linear", "linear")
+    end
+    return _background_img
+end
+
+-- Menu (book-select) assets. All hand-painted PNGs are 2x retina
+-- (display at half scale on the 540x960 portrait window). Books are
+-- keyed by box.id so a future box without an asset falls back cleanly
+-- to the procedural leather-cover render in draw_box_card.
+local MENU_ASSET_DIR = "assets/jewelsort_assets/png/"
+local BOOK_IMAGE_PATHS = {
+    starter = MENU_ASSET_DIR .. "book_first_steps.png",
+    forest  = MENU_ASSET_DIR .. "book_forest_harvest.png",
+    animals = MENU_ASSET_DIR .. "book_forest_friends.png",
+    shapes  = MENU_ASSET_DIR .. "book_shapes_symbols.png",
+}
+local _menu_imgs = {}
+local function menu_image(key, path)
+    local img = _menu_imgs[key]
+    if img ~= nil then return img end
+    if path == nil then return nil end
+    img = love.graphics.newImage(path)
+    img:setFilter("linear", "linear")
+    _menu_imgs[key] = img
+    return img
+end
+local function book_image(box_id)
+    local path = box_id and BOOK_IMAGE_PATHS[box_id] or nil
+    if path == nil then return nil end
+    return menu_image("book_" .. box_id, path)
+end
+local function menu_bg_image()    return menu_image("bg",      MENU_ASSET_DIR .. "bg_wood.png")          end
+local function ribbon_image()     return menu_image("ribbon",  MENU_ASSET_DIR .. "bookmark_ribbon.png")  end
+local function book_medal_image() return menu_image("medal",   MENU_ASSET_DIR .. "medal_completion.png") end
+local function counter_image()    return menu_image("counter", MENU_ASSET_DIR .. "counter_jewels.png")   end
+local function book_lock_image()  return menu_image("lock",    MENU_ASSET_DIR .. "book_lock.png")        end
+
+-- Level-select assets (page parchment, polaroid cards, pushpins, etc.).
+-- Each card variant has an inner-frame rect (in 1x display coordinates)
+-- where the level's pixel-art thumbnail is composited. Values come from
+-- assets/jewelsort_assets/README.md (2x asset coords halved for 1x).
+local CARD_FRAME = {
+    s  = { x = 11, y = 11, w =  88, h =  88 },
+    m  = { x = 11, y = 11, w = 128, h = 130 },
+    l  = { x = 20, y = 11, w = 230, h = 132 },
+    xl = { x = 18, y = 18, w = 244, h = 244 },
+}
+-- Display sizes (1x). PNG asset is 2x; we draw at 0.5 scale.
+local CARD_DISPLAY_SIZE = {
+    s  = { w = 110, h = 130 },
+    m  = { w = 150, h = 180 },
+    l  = { w = 270, h = 168 },
+    xl = { w = 280, h = 320 },
+}
+-- Recommended star size per card variant (README §"Star size is also
+-- scaled per card").
+local STAR_DISPLAY_SIZE = { s = 30, m = 38, l = 38, xl = 52 }
+
+local function card_image(size, locked)
+    local key = "card_" .. size .. (locked and "_locked" or "")
+    local path = MENU_ASSET_DIR .. key .. ".png"
+    return menu_image(key, path)
+end
+
+local function pushpin_image(color)
+    local key = "pushpin_" .. color
+    local path = MENU_ASSET_DIR .. key .. ".png"
+    return menu_image(key, path)
+end
+
+local function level_star_image() return menu_image("level_star",  MENU_ASSET_DIR .. "level_star.png")          end
+local function page_parchment_image() return menu_image("page_parchment", MENU_ASSET_DIR .. "page_parchment.png") end
+local function page_ribbon_image()    return menu_image("page_ribbon",    MENU_ASSET_DIR .. "page_ribbon_burgundy.png") end
+local function back_button_image()    return menu_image("back_button",    MENU_ASSET_DIR .. "back_button.png") end
+
 -- Visible gem occupies ~85% of the asset frame (rest is soft shadow halo).
 -- Callers pass a desired gem_diameter and the helper scales the asset so
 -- the gem matches that diameter; the halo naturally extends past it.
@@ -118,9 +177,10 @@ local MEDAL_COLORS = {
     gold   = { 1.00, 0.84, 0.30 },
 }
 
--- Counter badge visual. Kept centralized so menu:badge_rect matches.
-local BADGE_W = 96
-local BADGE_H = 34
+-- Counter badge visual. Matches counter_jewels.png (200x96, half-scale).
+-- Kept centralized so menu:badge_rect matches.
+local BADGE_W = 100
+local BADGE_H = 48
 
 -- Celebration timeline (seconds since celebration.t = 0).
 -- First-time solve path:
@@ -163,49 +223,42 @@ local CEL_BTN_BOT  = 20  -- button bottom padding inside card
 --   grid_pixel_w, grid_pixel_h
 function M.compute_layout(level, win_w, win_h, view)
     local margin = 16
-    -- Top header band holds the in-puzzle back button.
     local back_button_w = 110
     local back_button_h = 44
-    local header_h = back_button_h + 8 -- 4px top pad (= margin residual), 8px bottom gap
-    -- Shelf is now a 2-row tray. Height is clamped so tall windows don't bloat it.
+    local hint_button_w = 110
+    -- Shelf is a 2-row tray. Height is clamped so tall windows don't bloat it.
     local shelf_h = math.min(math.floor(win_h * 0.20), 180)
-    -- Dedicated strip for the solve-progress bar, sitting just above the shelf.
-    local progress_h = 20
-    local shelf_y = win_h - margin - shelf_h
-    local progress_y = shelf_y - progress_h - 4 -- 4px gap between bar and shelf top
-    local grid_top = margin + header_h
-    local grid_area = {
-        x = margin,
-        y = grid_top,
-        w = win_w - margin * 2,
-        h = progress_y - grid_top - 4,
-    }
-    local progress_area = {
-        x = margin,
-        y = progress_y,
-        w = win_w - margin * 2,
-        h = progress_h,
-    }
-    local shelf_area = {
-        x = margin,
-        y = shelf_y,
-        w = win_w - margin * 2,
-        h = shelf_h,
-    }
+    -- Puzzle artwork is full-bleed; chrome (back, progress, hint, shelf)
+    -- overlays on top. Cells whose target lands behind chrome are
+    -- visible only at the chrome edges and unreachable by tap; that
+    -- tradeoff is intentional.
+    local grid_area = { x = 0, y = 0, w = win_w, h = win_h }
     local back_button_rect = {
         x = margin,
         y = margin,
         w = back_button_w,
         h = back_button_h,
     }
-    -- Persistent "controls" hint plaque in the top-right of the header
-    -- band. Mirrors the back button's height so both sit on the same line.
-    local hint_button_w = 110
     local hint_button_rect = {
         x = win_w - margin - hint_button_w,
         y = margin,
         w = hint_button_w,
         h = back_button_h,
+    }
+    -- Progress bar lives in the top header band, between the back and
+    -- hint plaques.
+    local progress_x = back_button_rect.x + back_button_rect.w + 8
+    local progress_area = {
+        x = progress_x,
+        y = margin,
+        w = hint_button_rect.x - progress_x - 8,
+        h = back_button_h,
+    }
+    local shelf_area = {
+        x = margin,
+        y = win_h - margin - shelf_h,
+        w = win_w - margin * 2,
+        h = shelf_h,
     }
     local cols = level.width
     local rows = level.height
@@ -219,22 +272,24 @@ function M.compute_layout(level, win_w, win_h, view)
     local fit_ox = grid_area.x + math.floor((grid_area.w - grid_pixel_w) / 2)
     local fit_oy = grid_area.y + math.floor((grid_area.h - grid_pixel_h) / 2)
 
+    -- Pan freedom: clamp only enough to keep one cell of the grid
+    -- visible on each axis. Anything tighter (e.g. corner-at-center,
+    -- corner-at-edge) feels restrictive when zoomed in because the
+    -- player can't push a region of interest into the comfortable
+    -- middle of the screen. The trailing edge of the grid stays at
+    -- least `cell_size` inside the visible area, which keeps the grid
+    -- findable without locking out reachable space.
     local pan_x = (view and view.pan_x) or 0
     local pan_y = (view and view.pan_y) or 0
-    if grid_pixel_w <= grid_area.w then
-        pan_x = 0
-    else
-        local over = (grid_pixel_w - grid_area.w) / 2
-        if pan_x < -over then pan_x = -over end
-        if pan_x >  over then pan_x =  over end
-    end
-    if grid_pixel_h <= grid_area.h then
-        pan_y = 0
-    else
-        local over = (grid_pixel_h - grid_area.h) / 2
-        if pan_y < -over then pan_y = -over end
-        if pan_y >  over then pan_y =  over end
-    end
+    local keep = cell_size
+    local over_x = (grid_area.w + grid_pixel_w) / 2 - keep
+    local over_y = (grid_area.h + grid_pixel_h) / 2 - keep
+    if over_x < 0 then over_x = 0 end
+    if over_y < 0 then over_y = 0 end
+    if pan_x < -over_x then pan_x = -over_x end
+    if pan_x >  over_x then pan_x =  over_x end
+    if pan_y < -over_y then pan_y = -over_y end
+    if pan_y >  over_y then pan_y =  over_y end
     if view ~= nil then
         view.pan_x = pan_x
         view.pan_y = pan_y
@@ -337,24 +392,29 @@ function M.screen_to_shelf(layout, shelf_len, sx, sy, _capacity)
 end
 
 local function draw_desk(win_w, win_h)
-    wood.draw_panel("desk", 0, 0, win_w, win_h)
+    local img = background_image()
+    local iw, ih = img:getDimensions()
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(img, 0, 0, 0, win_w / iw, win_h / ih)
 end
 
--- Each cell is a target-color rounded square with an octagonal bevelled
--- slot tinted to a darkened version of the same color. The square IS
--- the color cue; the slot advertises where the jewel sits.
-local SLOT_TINT = 0.35
-local CELL_CORNER = 0.08
+-- Layer stack per cell (bottom -> top):
+--   1. drop shadow beneath the tile
+--   2. bright target-color rounded square (the color cue)
+--   3. octagonal bevelled slot tinted to a darker version of the target
+--      (sits inside the square; the square's corners read as a colored
+--      rim around the slot)
+--   4. jewel (when settled and not being lifted)
+local SLOT_TINT = 0.50
+local CELL_CORNER = 0
 local function draw_cell(x, y, size, jewel_color, hovering, target_color)
     local cx = x + size / 2
     local cy = y + size / 2
     local corner = size * CELL_CORNER
 
-    -- Drop shadow beneath the tile.
     love.graphics.setColor(0, 0, 0, 0.25)
     love.graphics.rectangle("fill", x, y + 2, size, size, corner, corner)
 
-    -- Target-color square background.
     if target_color ~= nil then
         love.graphics.setColor(target_color[1], target_color[2], target_color[3], 1)
     else
@@ -362,7 +422,6 @@ local function draw_cell(x, y, size, jewel_color, hovering, target_color)
     end
     love.graphics.rectangle("fill", x, y, size, size, corner, corner)
 
-    -- Octagonal slot tinted to a darkened target color.
     local tr, tg, tb
     if target_color ~= nil then
         tr, tg, tb = target_color[1], target_color[2], target_color[3]
@@ -485,19 +544,8 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
     local W, H = love.graphics.getWidth(), love.graphics.getHeight()
     draw_desk(W, H)
 
-    -- Recessed "game board" plaque behind the grid area.
-    local ga = layout.grid_area
-    wood.draw_panel("board", ga.x - 6, ga.y - 6, ga.w + 12, ga.h + 12, 12)
-
     local origin_x, origin_y = layout.origin_x, layout.origin_y
     local size = layout.cell_size
-
-    -- Clip grid-area drawing so that a zoomed-in grid doesn't bleed out
-    -- over the back-button header or the shelf below it. The board panel
-    -- was drawn at the full `ga` rect above, so clipping here only affects
-    -- cells, jewels, hover sprites, and fly animations. Scissor is cleared
-    -- before shelf / progress / flash / celebration draws below.
-    love.graphics.setScissor(ga.x, ga.y, ga.w, ga.h)
 
     local hovering_cells = {}
     if level.state.kind == "hovering" and level.state.source == "grid" then
@@ -534,76 +582,19 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
         end
     end
 
-    -- Release the grid-area scissor before chrome outside the grid draws.
-    love.graphics.setScissor()
-
-    -- Shelf: recessed walnut tray with slot outlines.
+    -- Shelf geometry is computed early so the hover branch can reference
+    -- the slot size when the lift is sourced from the shelf.
     local s = layout.shelf_area
-    wood.draw_panel("shelf_tray", s.x, s.y, s.w, s.h, 10)
-    love.graphics.setColor(0, 0, 0, 0.35)
-    love.graphics.rectangle("fill", s.x + 2, s.y + 2, s.w - 4, 3)
-
     local shelf_len = #level.shelf
     local capacity = level.shelf_capacity or shelf_len
     local slot = shelf_slot_size(s)
     local r = math.floor(slot * 0.38)
 
-    love.graphics.setLineWidth(1)
-    for i = 1, capacity do
-        local cx, cy = shelf_slot_center(s, i)
-        love.graphics.setColor(P.walnut_dark[1], P.walnut_dark[2], P.walnut_dark[3], 0.85)
-        love.graphics.circle("fill", cx, cy, r)
-        love.graphics.setColor(P.plaque_light[1], P.plaque_light[2], P.plaque_light[3], 0.55)
-        love.graphics.circle("line", cx, cy, r)
-    end
-
-    for i = 1, shelf_len do
-        local jewel = level.shelf[i]
-        local cx, cy = shelf_slot_center(s, i)
-        draw_jewel(cx, cy, r, jewel.color, false)
-    end
-
-    -- Solve progress: 8 segments of gold foil in the dedicated strip
-    -- between the grid and the shelf.
-    local p = layout.progress_area
-    local segments = 8
-    local solved, total = level:progress()
-    local filled = (total > 0) and math.floor((solved / total) * segments + 0.0001) or 0
-    local bar_h = 10
-    local bar_w = p.w - 24
-    local bar_x = p.x + 12
-    local bar_y = p.y + math.floor((p.h - bar_h) / 2)
-    local seg_gap = 3
-    local seg_w = (bar_w - seg_gap * (segments - 1)) / segments
-
-    love.graphics.setColor(0, 0, 0, 0.45)
-    love.graphics.rectangle("fill", bar_x - 2, bar_y - 2, bar_w + 4, bar_h + 4, 4, 4)
-
-    for i = 1, segments do
-        local sx = bar_x + (i - 1) * (seg_w + seg_gap)
-        if i <= filled then
-            love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 0.95)
-        else
-            love.graphics.setColor(P.walnut_dark[1], P.walnut_dark[2], P.walnut_dark[3], 0.85)
-        end
-        love.graphics.rectangle("fill", sx, bar_y, seg_w, bar_h, 3, 3)
-        if i <= filled then
-            love.graphics.setColor(1, 1, 1, 0.35)
-            love.graphics.rectangle("fill", sx, bar_y, seg_w, 2)
-        end
-    end
-
-    if level.flash ~= nil and level.flash.t and level.flash.t > 0 then
-        local alpha = math.min(1, level.flash.t)
-        love.graphics.setColor(0, 0, 0, alpha * 0.45)
-        love.graphics.printf(level.flash.text or "", s.x, s.y + 5, s.w, "center")
-        love.graphics.setColor(FLASH_COLOR[1], FLASH_COLOR[2], FLASH_COLOR[3], alpha)
-        love.graphics.printf(level.flash.text or "", s.x, s.y + 4, s.w, "center")
-    end
-
     -- Hover cluster floats at origin positions, preserving cluster shape.
-    -- Lift eases in from 0 over Level.LIFT_DURATION so the pick-up reads as
-    -- a smooth jump rather than a teleport.
+    -- Drawn before the shelf so a lifted grid cluster near the bottom
+    -- reads as held *behind* the tray, not floating over it. Lift eases
+    -- in from 0 over Level.LIFT_DURATION so the pick-up reads as a
+    -- smooth jump rather than a teleport.
     if level.state.kind == "hovering" then
         local col = level.state.color
         local lift_t = level.state.lift_t or 0
@@ -622,9 +613,11 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
                 local bob = math.sin(t_now * 4 + oc.x * 0.7 + oc.y * 0.5) * 2
                 local cy2 = origin_y + oc.y * size + size / 2 - lift + bob
                 draw_jewel(cx, cy2, r2, col, true)
-                -- Occasional twinkle while held aloft.
+                -- Occasional twinkle while held aloft. Spawned into the
+                -- "behind" layer so the glitter is occluded by the shelf
+                -- when it drifts down past the tray top edge.
                 if particles ~= nil and math.random() < 12 * dt then
-                    particles:spawn(cx, cy2, col, 1)
+                    particles:spawn(cx, cy2, col, 1, "behind")
                 end
             end
         else
@@ -638,10 +631,54 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
                 local bob = math.sin(t_now * 4 + i * 0.5) * 2
                 draw_jewel(cx, cy2 + bob, r2, col, true)
                 if particles ~= nil and math.random() < 12 * dt then
-                    particles:spawn(cx, cy2 + bob, col, 1)
+                    particles:spawn(cx, cy2 + bob, col, 1, "behind")
                 end
             end
         end
+    end
+
+    -- Behind-shelf particles render between the hover cluster and the
+    -- shelf panel so hover-twinkle glitter gets occluded by the tray.
+    if particles ~= nil then
+        particles:draw("behind")
+    end
+
+    -- Shelf: recessed walnut tray with octagonal wood-tinted slots that
+    -- mirror the grid slot shape (just neutrally tinted instead of
+    -- target-colored, since shelf slots aren't keyed to a color).
+    wood.draw_panel("shelf_tray", s.x, s.y, s.w, s.h, 10)
+    love.graphics.setColor(0, 0, 0, 0.35)
+    love.graphics.rectangle("fill", s.x + 2, s.y + 2, s.w - 4, 3)
+
+    local slot_img = slot_image()
+    local siw, sih = slot_img:getDimensions()
+    local slot_asset_size = math.floor(slot * 0.9)
+    for i = 1, capacity do
+        local cx, cy = shelf_slot_center(s, i)
+        love.graphics.setColor(P.walnut_dark[1], P.walnut_dark[2], P.walnut_dark[3], 1)
+        love.graphics.draw(
+            slot_img,
+            cx - slot_asset_size / 2,
+            cy - slot_asset_size / 2,
+            0,
+            slot_asset_size / siw,
+            slot_asset_size / sih
+        )
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+
+    for i = 1, shelf_len do
+        local jewel = level.shelf[i]
+        local cx, cy = shelf_slot_center(s, i)
+        draw_jewel(cx, cy, r, jewel.color, false)
+    end
+
+    if level.flash ~= nil and level.flash.t and level.flash.t > 0 then
+        local alpha = math.min(1, level.flash.t)
+        love.graphics.setColor(0, 0, 0, alpha * 0.45)
+        love.graphics.printf(level.flash.text or "", s.x, s.y + 5, s.w, "center")
+        love.graphics.setColor(FLASH_COLOR[1], FLASH_COLOR[2], FLASH_COLOR[3], alpha)
+        love.graphics.printf(level.flash.text or "", s.x, s.y + 4, s.w, "center")
     end
 
     -- Fly animation: every placement. Each jewel runs on its own clock
@@ -752,6 +789,42 @@ function M.draw(level, layout, mouse_x, mouse_y, particles)
         local ly = b.y + math.floor((b.h - fh) / 2) - 1
         print_engraved(i18n.t("back"), b.x, ly, b.w, "center", P.ink_light, 0.4)
         use_body()
+    end
+
+    -- Solve progress: 8 segments of gold foil, housed in the top header
+    -- band between the back and hint plaques. Wrapped in its own plaque
+    -- so it reads as part of the same chrome row.
+    local p = layout.progress_area
+    if p ~= nil and p.w > 0 then
+        wood.draw_panel("plaque", p.x, p.y, p.w, p.h, 8)
+        love.graphics.setColor(P.ink[1], P.ink[2], P.ink[3], 0.45)
+        love.graphics.setLineWidth(1)
+        love.graphics.rectangle("line", p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1, 8, 8)
+
+        local segments = 8
+        local solved, total = level:progress()
+        local filled = (total > 0) and math.floor((solved / total) * segments + 0.0001) or 0
+        local bar_h = 10
+        local bar_w = p.w - 16
+        local bar_x = p.x + 8
+        local bar_y = p.y + math.floor((p.h - bar_h) / 2)
+        local seg_gap = 3
+        local seg_w = (bar_w - seg_gap * (segments - 1)) / segments
+
+        for i = 1, segments do
+            local sx = bar_x + (i - 1) * (seg_w + seg_gap)
+            if i <= filled then
+                love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 0.95)
+            else
+                love.graphics.setColor(P.walnut_dark[1], P.walnut_dark[2], P.walnut_dark[3], 0.85)
+            end
+            love.graphics.rectangle("fill", sx, bar_y, seg_w, bar_h, 3, 3)
+            if i <= filled then
+                love.graphics.setColor(1, 1, 1, 0.35)
+                love.graphics.rectangle("fill", sx, bar_y, seg_w, 2)
+            end
+        end
+        love.graphics.setColor(1, 1, 1, 1)
     end
 
     -- Persistent controls hint (top-right header band). Tapping it
@@ -1207,9 +1280,12 @@ end
 
 local BADGE_BLUE = { 0.35, 0.85, 1.00 }
 
--- Plaque-backed jewel counter. `pulse_scale` scales the whole badge from
--- its center; a soft foil-color glow ring draws behind when pulsed above
--- 1.0 (set by the flight-arrival handler in main.lua).
+-- Counter widget: counter_jewels.png supplies the wood pill + sapphire,
+-- we overlay only the count numeral. `pulse_scale` scales the whole
+-- badge from its center; a soft foil-color glow draws behind when
+-- pulsed above 1.0 (set by the flight-arrival handler in main.lua).
+-- Falls back to the procedural plaque if the asset is missing so the
+-- HUD never disappears.
 local function draw_jewel_badge(x, y, count, pulse_scale)
     pulse_scale = pulse_scale or 1
     local w, h = BADGE_W, BADGE_H
@@ -1217,105 +1293,170 @@ local function draw_jewel_badge(x, y, count, pulse_scale)
 
     push_scale_around(cx, cy, pulse_scale)
 
-    -- Glow ring behind the plaque when pulsing.
+    -- Glow ring behind the badge when pulsing.
     if pulse_scale > 1.001 then
         local glow_t = math.min((pulse_scale - 1) / 0.18, 1)
         love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 0.35 * glow_t)
         love.graphics.circle("fill", cx, cy, math.max(w, h) * (0.6 + glow_t * 0.5))
     end
 
-    wood.draw_panel("plaque", x, y, w, h, 6)
-    -- Foil top band.
-    love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 0.9)
-    love.graphics.rectangle("fill", x + 6, y + 4, w - 12, 2)
-    -- Dark frame line.
-    love.graphics.setColor(0, 0, 0, 0.45)
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", x + 0.5, y + 0.5, w - 1, h - 1, 6, 6)
+    local img = counter_image()
+    if img ~= nil then
+        local iw, ih = img:getDimensions()
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(img, x, y, 0, w / iw, h / ih)
+    else
+        -- Asset-missing fallback: keep the old procedural plaque + jewel.
+        wood.draw_panel("plaque", x, y, w, h, 6)
+        love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 0.9)
+        love.graphics.rectangle("fill", x + 6, y + 4, w - 12, 2)
+        love.graphics.setColor(0, 0, 0, 0.45)
+        love.graphics.setLineWidth(1)
+        love.graphics.rectangle("line", x + 0.5, y + 0.5, w - 1, h - 1, 6, 6)
+        draw_jewel(x + 16, y + h / 2 + 1, 9, BADGE_BLUE, false)
+    end
 
-    -- Jewel icon on the left.
-    local jx = x + 16
-    local jy = y + h / 2 + 1
-    draw_jewel(jx, jy, 9, BADGE_BLUE, false)
-
-    -- Count numeral on the right, centered in the remaining space.
+    -- Count numeral. Asset reserves left ~45% for the sapphire; numeral
+    -- centers in the right area. Same math drives the fallback path.
     use_small()
     local fh = love.graphics.getFont():getHeight()
     local ty = y + (h - fh) / 2
-    local tx = x + 30
-    local tw = w - 34
+    local tx = x + math.floor(w * 0.45)
+    local tw = w - math.floor(w * 0.45) - 8
     print_engraved(tostring(count), tx, ty, tw, "center", P.ink_light, 0.4)
     use_body()
 
     love.graphics.pop()
 end
 
--- Draw one "book" tile for a box card. A wooden plaque with a darker
--- "spine" strip down the left edge to evoke a closed book lying flat.
+-- Procedural book fallback used when no PNG is mapped for a box.id.
+-- Keeps the old leather-cover look so future books without art still
+-- render reasonably; not the path the four shipped books take.
+local function draw_box_card_procedural(box, i, x, y, w, h, unlocked)
+    local LEATHER = { "leather_red", "leather_green", "leather_blue" }
+    local kind = unlocked and LEATHER[((i - 1) % 3) + 1] or "locked"
+    wood.draw_panel(kind, x, y, w, h, 10)
+    local spine_w = 36
+    wood.draw_panel("locked", x, y, spine_w, h, 10)
+    love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 0.9)
+    love.graphics.rectangle("fill", x, y + 18, spine_w, 3)
+    love.graphics.rectangle("fill", x, y + h - 22, spine_w, 3)
+    love.graphics.setColor(0, 0, 0, 0.45)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", x + 1, y + 1, w - 2, h - 2, 10, 10)
+end
+
+-- Draw one book tile for a box card. The PNG (book_<box.id>.png) carries
+-- the painted leather cover, gold spine, embossed plate, and pixel-art
+-- emblem; we overlay state (ribbon/medal/lock) and dynamic text.
 local function draw_box_card(menu, progression, box, i, win_w)
     local x, y, w, h = menu:layout_box_card(i, win_w)
     local unlocked = progression.is_box_unlocked(menu.progress, box)
     local done = progression.box_completed_count(menu.progress, box)
     local total = box.puzzles and #box.puzzles or 0
+    local completed = unlocked and total > 0 and done >= total
+    local in_progress = unlocked and done > 0 and not completed
+
+    -- Hover: cubic ease-out for a snappy rise/fall. 0 when locked or
+    -- empty (hit_press_target rejects those, so hover_t stays at 0).
+    local hover_raw = menu:hover_t_for("box", i)
+    local hover_t = 1 - (1 - hover_raw) ^ 3
+    local lift = 6 * hover_t
+
+    -- Lift the whole card up by `lift`. All subsequent x/y math (cover,
+    -- overlays, text, press scrim) uses this shifted y.
+    y = y - lift
 
     local press_scale = menu:press_scale_for("box", i)
     local cx, cy = x + w / 2, y + h / 2
     push_scale_around(cx, cy, press_scale)
 
-    -- Leather book cover, rotating colors per index. Locked boxes use
-    -- the gray "locked" wood instead so they read as inert.
-    local LEATHER = { "leather_red", "leather_green", "leather_blue" }
-    local kind = unlocked and LEATHER[((i - 1) % 3) + 1] or "locked"
-    wood.draw_panel(kind, x, y, w, h, 10)
+    -- 1. Cover. Image is fit-to-rect so card_h tracks asset aspect
+    --    (LAYOUT.box_card_height = 173 for the 1040x360 source).
+    local img = book_image(box.id)
+    if img ~= nil then
+        local iw, ih = img:getDimensions()
+        local sx, sy = w / iw, h / ih
+        if unlocked then
+            love.graphics.setColor(1, 1, 1, 1)
+        else
+            -- Warm dark tint per asset README — dims the cover and
+            -- desaturates the emblem in one multiply.
+            love.graphics.setColor(0.40, 0.32, 0.22, 1.0)
+        end
+        love.graphics.draw(img, x, y, 0, sx, sy)
+        love.graphics.setColor(1, 1, 1, 1)
+    else
+        draw_box_card_procedural(box, i, x, y, w, h, unlocked)
+    end
 
-    -- Spine strip on the left in a darker shade.
-    local spine_w = 36
-    wood.draw_panel(unlocked and "locked" or "locked", x, y, spine_w, h, 10)
-    -- Two thin gold-foil bands around the spine like a hardback book.
-    love.graphics.setColor(P.foil[1], P.foil[2], P.foil[3], 0.9)
-    love.graphics.rectangle("fill", x, y + 18, spine_w, 3)
-    love.graphics.rectangle("fill", x, y + h - 22, spine_w, 3)
+    -- Hover highlight: very subtle warm additive glow. Sits between
+    -- cover and state overlays so the lock/medal/ribbon stay vivid.
+    if hover_t > 0.01 then
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(0.18, 0.15, 0.08, 0.10 * hover_t)
+        love.graphics.rectangle("fill", x, y, w, h, 10, 10)
+        love.graphics.setBlendMode("alpha")
+        love.graphics.setColor(1, 1, 1, 1)
+    end
 
-    -- Outer cover frame line.
-    love.graphics.setColor(0, 0, 0, 0.45)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", x + 1, y + 1, w - 2, h - 2, 10, 10)
+    -- 2. State overlay (mutually exclusive: locked > completed > in-progress).
+    if not unlocked then
+        local lock = book_lock_image()
+        if lock ~= nil then
+            local lw, lh = lock:getDimensions()
+            -- Half-scale per asset (2x retina source); centered on cover.
+            local s = 0.5
+            local dw, dh = lw * s, lh * s
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(lock, x + w / 2 - dw / 2, y + h / 2 - dh / 2, 0, s, s)
+        end
+    elseif completed then
+        local medal = book_medal_image()
+        if medal ~= nil then
+            local mw, mh = medal:getDimensions()
+            local s = 0.5
+            local dw, dh = mw * s, mh * s
+            -- Top-right of the book; rotation is baked into the asset.
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(medal, x + w - dw - 8, y - 6, 0, s, s)
+        end
+    elseif in_progress then
+        local ribbon = ribbon_image()
+        if ribbon ~= nil then
+            local rw, rh = ribbon:getDimensions()
+            local s = 0.5
+            local dw = rw * s
+            -- Hangs off the top of the book near the right edge.
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(ribbon, x + w - dw - 24, y - 8, 0, s, s)
+        end
+    end
 
-    local title_x = x + spine_w + 18
-    -- Foil-stamped title on leather (gold for unlocked, soft for locked).
+    -- 3. Dynamic text. The book's parchment plate occupies ~the left
+    --    third; title + status sit on the empty right side.
+    local title_x = x + math.floor(w * 0.34)
+    local title_w = w - (title_x - x) - 16
     local title_color = unlocked and P.foil or P.ink_soft
     love.graphics.setColor(0, 0, 0, 0.45)
-    love.graphics.print(box.title or box.id, title_x + 2, y + 22)
+    love.graphics.printf(box.title or box.id, title_x + 2, y + 26, title_w, "left")
     love.graphics.setColor(title_color[1], title_color[2], title_color[3], unlocked and 1 or 0.7)
-    love.graphics.print(box.title or box.id, title_x, y + 20)
+    love.graphics.printf(box.title or box.id, title_x, y + 24, title_w, "left")
 
+    use_small()
     if unlocked then
-        use_small()
         love.graphics.setColor(P.ink_light[1], P.ink_light[2], P.ink_light[3], 0.95)
-        love.graphics.print(done .. " / " .. total, title_x, y + h - 38)
-        -- Only earned medals render; unearned puzzles stay blank.
-        local shown = 0
-        for pi = 1, total do
-            local p = box.puzzles[pi]
-            local earned = progression.puzzle_medal(menu.progress, p.id)
-            if earned then
-                local dx = title_x + shown * 26
-                local dy = y + 70
-                M.draw_medal(dx, dy, 22, earned)
-                shown = shown + 1
-            end
-        end
-        use_body()
+        love.graphics.printf(done .. " / " .. total, title_x, y + h - 40, title_w, "left")
     else
-        use_small()
         love.graphics.setColor(P.ink_light[1], P.ink_light[2], P.ink_light[3], 0.85)
         love.graphics.printf(
             i18n.t_plural("locked_needs", box.jewel_cost or 0),
-            title_x, y + h / 2 - 12, w - spine_w - 32, "left"
+            title_x, y + h - 50, title_w, "left"
         )
-        use_body()
     end
+    use_body()
 
+    -- 4. Press scrim, drawn flat over the whole card.
     local oa = menu:press_overlay_alpha_for("box", i)
     if oa > 0 then
         love.graphics.setColor(0, 0, 0, oa)
@@ -1452,93 +1593,129 @@ local function draw_tape_strip(cx, cy, length, angle_rad)
     love.graphics.pop()
 end
 
--- Draw one pinned-photo level tile on the scrapbook "book page".
--- Every tile is a parchment photo card, taped at two opposing corners.
--- Solved tiles show the cached colored-block thumbnail; unsolved tiles
--- show one of the SEALED / polaroid / stamped-polaroid placeholders.
--- The medal badge sits at the untilted tile corner as a UI indicator
--- rather than something taped to the photo.
+-- Draw one pinned-polaroid level card on the parchment book page.
+-- Card variant (S/M/L/XL) is determined by menu.lua from the level's
+-- bbox dims; the inner pixel-art thumbnail is composited into the
+-- card's frame rect (CARD_FRAME). Pushpin sits at the top center;
+-- a gold rosette star overlays the top-right corner for completed
+-- levels. Unlocked cards sway gently around their pushpin pivot to
+-- advertise tappability.
 local function draw_level_tile(menu, progression, thumbnails, box, i, win_w)
     local p = box.puzzles[i]
     local x, y, w, h = menu:layout_level_tile(i, win_w)
-    local earned = progression.puzzle_medal(menu.progress, p.id)
-    local completed = progression.is_puzzle_completed(menu.progress, p.id)
+    if w <= 0 or h <= 0 then return end
+    local v = menu:level_visuals(menu.selected_box, i)
+    if v == nil then v = { size = "m", pushpin = "red", rotation = 0,
+                           sway_phase = 0, sway_speed = 1.4 } end
+    local size = v.size
+    local frame = CARD_FRAME[size] or CARD_FRAME.m
 
+    local completed = progression.is_puzzle_completed(menu.progress, p.id)
+    -- Per-level locking is out of scope for this pass; every visible
+    -- card is unlocked. The locked card variant is loadable via
+    -- card_image(size, true) when per-level gating lands.
+    local locked = false
+
+    -- Press-scale wrap (so press feedback survives sway).
     local press_scale = menu:press_scale_for("level", i)
     local cx, cy = x + w / 2, y + h / 2
     push_scale_around(cx, cy, press_scale)
 
-    local tilt, corner_style = puzzle_tile_style(p)
+    -- Sway: gentle rotation + vertical bob on a per-card phase, pivoting
+    -- near the pushpin (top 20% of the card) so the polaroid reads as
+    -- hanging from a pin. Locked cards skip motion (per asset README).
+    local rot = v.rotation or 0
+    local bob = 0
+    if not locked then
+        local t = (love and love.timer and love.timer.getTime() or 0)
+        rot = rot + math.sin(t * v.sway_speed + v.sway_phase) * 0.009
+        bob = math.sin(t * v.sway_speed + v.sway_phase) * 1.5
+    end
 
-    -- Photo card fills most of the tile with a small inset so tape can
-    -- extend slightly past the card edges onto the page.
-    local pad = 10
-    local cardx = x + pad
-    local cardy = y + pad
-    local cardw = w - pad * 2
-    local cardh = h - pad * 2
-
-    -- Tilt around the tile center so the photo + its tape share one frame.
+    -- Pivot: top-center of card (where the pushpin lives).
+    local pivot_x = x + w / 2
+    local pivot_y = y + h * 0.2
     love.graphics.push()
-    love.graphics.translate(cx, cy)
-    love.graphics.rotate(tilt)
-    love.graphics.translate(-cx, -cy)
+    love.graphics.translate(pivot_x, pivot_y + bob)
+    love.graphics.rotate(rot)
+    love.graphics.translate(-pivot_x, -pivot_y)
 
-    draw_photo_card(cardx, cardy, cardw, cardh)
-
-    local inner_pad = 6
-    local ix = cardx + inner_pad
-    local iy = cardy + inner_pad
-    local iw = cardw - inner_pad * 2
-    local ih = cardh - inner_pad * 2
-
-    local thumb = thumbnails and thumbnails[p.id] or nil
-    if thumb and completed then
-        local tw, th = thumb:getDimensions()
-        local inner = math.min(iw, ih)
-        local scale = inner / math.max(tw, th)
-        local dw = tw * scale
-        local dh = th * scale
-        local dx = ix + (iw - dw) / 2
-        local dy = iy + (ih - dh) / 2
+    -- Card body (PNG asset @ 0.5x). The asset's painted shadow already
+    -- sits inside its bounds, so no extra drop-shadow draw needed.
+    local card_img = card_image(size, locked)
+    if card_img ~= nil then
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(thumb, dx, dy, 0, scale, scale)
+        love.graphics.draw(card_img, x, y, 0, 0.5, 0.5)
     else
-        local style = book_placeholder_style(box)
-        if style == 1 then
-            draw_placeholder_stamp(ix, iy, iw, ih)
-        elseif style == 2 then
-            draw_placeholder_polaroid(ix, iy, iw, ih)
-        else
-            draw_placeholder_stamped_polaroid(ix, iy, iw, ih)
+        -- Fallback: cream rectangle so the card never disappears if the
+        -- asset is missing during development.
+        love.graphics.setColor(0.95, 0.92, 0.84, 1)
+        love.graphics.rectangle("fill", x, y, w, h, 6, 6)
+    end
+
+    -- Inner pixel-art thumbnail (only on unlocked cards — locked variants
+    -- bake the "?" into the asset).
+    if not locked then
+        local thumb = thumbnails and thumbnails[p.id] or nil
+        if thumb ~= nil then
+            -- Frame coords are in 1x display space relative to card top-left.
+            local fx = x + frame.x
+            local fy = y + frame.y
+            local fw = frame.w
+            local fh = frame.h
+            local tw, th = thumb:getDimensions()
+            -- Fit-largest-side, integer-snap so puzzle pixels stay square.
+            local scale = math.min(fw / tw, fh / th)
+            if scale <= 0 then scale = 1 end
+            local dw = tw * scale
+            local dh = th * scale
+            local dx = fx + (fw - dw) / 2
+            local dy = fy + (fh - dh) / 2
+            local prev_min, prev_mag = thumb:getFilter()
+            thumb:setFilter("nearest", "nearest")
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(thumb, dx, dy, 0, scale, scale)
+            thumb:setFilter(prev_min, prev_mag)
         end
     end
 
-    -- Two tape strips at opposing corners, tilted ~30° so they look
-    -- hand-placed. Rendered after the photo so tape sits on top.
-    local tape_len = 46
-    if corner_style == 0 then
-        draw_tape_strip(cardx + 6,         cardy + 6,         tape_len, -math.pi / 4)
-        draw_tape_strip(cardx + cardw - 6, cardy + cardh - 6, tape_len, -math.pi / 4)
-    else
-        draw_tape_strip(cardx + cardw - 6, cardy + 6,         tape_len,  math.pi / 4)
-        draw_tape_strip(cardx + 6,         cardy + cardh - 6, tape_len,  math.pi / 4)
+    -- Completion star — only for unlocked + completed.
+    if completed and not locked then
+        local star = level_star_image()
+        if star ~= nil then
+            local target = STAR_DISPLAY_SIZE[size] or 38
+            local sw, sh = star:getDimensions()
+            local s = target / math.max(sw, sh)
+            -- Top-right corner, slightly overlapping the card edge.
+            local sx = x + w - target * 0.7
+            local sy = y - target * 0.25
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(star, sx, sy, math.rad(15), s, s, sw / 2, sh / 2)
+        end
     end
 
-    love.graphics.pop() -- end tilt
+    love.graphics.pop() -- end sway transform
 
-    -- Medal in the untilted tile corner, on top of any tape it might overlap.
-    if earned then
-        local medal_size = 22
-        local mx = x + w - medal_size - 8
-        local my = y + 8
-        M.draw_medal(mx, my, medal_size, earned)
+    -- Pushpin sits OUTSIDE the sway transform so it reads as fixed to
+    -- the page; the card swings under it. 22x22 display, centered above
+    -- the card top edge.
+    local pin = pushpin_image(v.pushpin)
+    if pin ~= nil then
+        local pw, ph = pin:getDimensions()
+        local pin_w, pin_h = 22, 22
+        local pin_sx = pin_w / pw
+        local pin_sy = pin_h / ph
+        local px = x + w / 2 - pin_w / 2
+        local py = y - pin_h * 0.35
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(pin, px, py, 0, pin_sx, pin_sy)
     end
 
+    -- Press scrim (drawn after sway/pop, in card-local rect).
     local oa = menu:press_overlay_alpha_for("level", i)
     if oa > 0 then
         love.graphics.setColor(0, 0, 0, oa)
-        love.graphics.rectangle("fill", x, y, w, h)
+        love.graphics.rectangle("fill", x, y, w, h, 6, 6)
     end
     love.graphics.pop() -- end press-scale
 end
@@ -1550,12 +1727,24 @@ local function draw_back_button(menu)
     local press_scale = menu:press_scale_for("back", 0)
     local cx, cy = bx + bw / 2, by + bh / 2
     push_scale_around(cx, cy, press_scale)
-    wood.draw_panel("plaque", bx, by, bw, bh, 8)
-    love.graphics.setColor(P.ink[1], P.ink[2], P.ink[3], 0.45)
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", bx + 0.5, by + 0.5, bw - 1, bh - 1, 8, 8)
+    -- back_button.png is 180x80 (2x); draw at 0.5 -> 90x40 to match
+    -- menu.LAYOUT.back_w/back_h. Falls back to a procedural plaque if
+    -- the asset is missing.
+    local img = back_button_image()
+    if img ~= nil then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(img, bx, by, 0, 0.5, 0.5)
+    else
+        wood.draw_panel("plaque", bx, by, bw, bh, 8)
+        love.graphics.setColor(P.ink[1], P.ink[2], P.ink[3], 0.45)
+        love.graphics.setLineWidth(1)
+        love.graphics.rectangle("line", bx + 0.5, by + 0.5, bw - 1, bh - 1, 8, 8)
+    end
     use_small()
-    print_engraved(i18n.t("back"), bx, by + 14, bw, "center", P.ink_light, 0.4)
+    -- Vertically centre "Back" / "Назад" inside the wooden pill. Small
+    -- font is 22 px tall in our setup; ~y+10 looks correct for a 40 px
+    -- pill (asset baseline sits a touch above geometric center).
+    print_engraved(i18n.t("back"), bx, by + 8, bw, "center", P.ink_light, 0.4)
     use_body()
     local oa = menu:press_overlay_alpha_for("back", 0)
     if oa > 0 then
@@ -1571,7 +1760,17 @@ end
 -- jewels are en-route from the celebration card to the badge.
 function M.draw_menu(menu, progression, thumbnails, win_w, win_h, display_state)
     use_body()
-    draw_desk(win_w, win_h)
+    -- bg_wood.png is the menu's full-screen background per the asset
+    -- README. Falls through to draw_desk if the asset is missing so the
+    -- screen never goes blank.
+    local bg = menu_bg_image()
+    if bg ~= nil then
+        local iw, ih = bg:getDimensions()
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(bg, 0, 0, 0, win_w / iw, win_h / ih)
+    else
+        draw_desk(win_w, win_h)
+    end
 
     local badge_count = menu.progress.jewels
     local pulse_scale = 1
@@ -1585,12 +1784,8 @@ function M.draw_menu(menu, progression, thumbnails, win_w, win_h, display_state)
     end
 
     if menu.screen == "boxes" then
-        -- Parchment "library page" backdrop behind the leather books.
-        local margin = 16
-        local page_y = 110
-        local page_h = win_h - page_y - margin
-        wood.draw_panel("parchment", margin, page_y, win_w - margin * 2, page_h, 14)
-
+        -- bg_wood already paints the full backdrop; books are designed
+        -- to sit directly on the wood (no parchment "page" between).
         print_engraved("JewelSort", 0, 22, win_w, "center", P.ink, 0.4)
         use_small()
         love.graphics.setColor(P.ink_soft[1], P.ink_soft[2], P.ink_soft[3], 0.85)
@@ -1609,10 +1804,30 @@ function M.draw_menu(menu, progression, thumbnails, win_w, win_h, display_state)
         local box = menu:current_box()
         if box == nil then return end
 
-        local margin = 16
-        local page_y = 74
-        local page_h = win_h - page_y - margin
-        wood.draw_panel("parchment", margin, page_y, win_w - margin * 2, page_h, 14)
+        -- Parchment "page" of the open book — PNG asset preferred, with
+        -- procedural fallback so the screen never goes blank.
+        local px, py, pw, ph = menu:page_rect(win_w, win_h)
+        local parchment = page_parchment_image()
+        if parchment ~= nil then
+            local iw, ih = parchment:getDimensions()
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(parchment, px, py, 0, pw / iw, ph / ih)
+        else
+            wood.draw_panel("parchment", px, py, pw, ph, 14)
+        end
+
+        -- Burgundy ribbon hanging from the top edge of the page.
+        local ribbon = page_ribbon_image()
+        if ribbon ~= nil then
+            local rw_disp, rh_disp = 32, 60
+            local riw, rih = ribbon:getDimensions()
+            local rsx = rw_disp / riw
+            local rsy = rh_disp / rih
+            local rx = px + pw - rw_disp - 36
+            local ry = py - 8
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(ribbon, rx, ry, 0, rsx, rsy)
+        end
 
         draw_back_button(menu)
 
@@ -1620,9 +1835,13 @@ function M.draw_menu(menu, progression, thumbnails, win_w, win_h, display_state)
         local bx, by = menu:badge_rect(win_w, win_h)
         draw_jewel_badge(bx, by, badge_count, pulse_scale)
 
+        -- Clip cards to the parchment-page rect so scrolling content
+        -- doesn't bleed onto the wood background or the header strip.
+        love.graphics.setScissor(px, py, pw, ph)
         for i = 1, #(box.puzzles or {}) do
             draw_level_tile(menu, progression, thumbnails, box, i, win_w)
         end
+        love.graphics.setScissor()
         return
     end
 end

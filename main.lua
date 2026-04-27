@@ -359,6 +359,7 @@ function love.load(args)
     game.progress = progression.load()
     preload_puzzles()
     game.menu = Menu.new(game.boxes, game.progress)
+    game.menu:bind_descriptors(game.descriptors)
 
     -- Kick off an async cloud-save sync. The menu and progression
     -- table are shared by reference, so if the cloud has more
@@ -526,7 +527,9 @@ function love.update(dt)
         game.confetti:update(dt)
     end
     if game.menu ~= nil then
-        game.menu:update(dt)
+        local W, H = viewport()
+        local mx, my = to_content(love.mouse.getX(), love.mouse.getY())
+        game.menu:update(dt, mx, my, W, H)
     end
     if game.mode == "playing" and game.level ~= nil then
         game.level:update(dt)
@@ -790,6 +793,11 @@ end
 
 function love.mousemoved(x, y, _dx, _dy)
     x, y = to_content(x, y)
+    if game.mode == "menu" then
+        local W, H = viewport()
+        game.menu:handle_drag(x, y, W, H)
+        return
+    end
     if game.mode ~= "playing" or game.view == nil then return end
     -- Integrate against our own last-position so pan tracks cleanly even
     -- if love's dx/dy is frame-batched differently than events. Both LMB
@@ -805,6 +813,11 @@ end
 
 function love.wheelmoved(_dx, dy)
     if dy == 0 then return end
+    if game.mode == "menu" then
+        local W, H = viewport()
+        game.menu:wheel(dy, W, H)
+        return
+    end
     if game.mode ~= "playing" or game.view == nil or game.layout == nil then return end
     local factor = 1 + dy * WHEEL_ZOOM_STEP
     local mx, my = love.mouse.getPosition()

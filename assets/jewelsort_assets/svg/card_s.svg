@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 260" width="220" height="260">
+  <defs>
+    <linearGradient id="papercard_s" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F6EEDC"/>
+    </linearGradient>
+    <linearGradient id="framecard_s" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0E0904"/>
+      <stop offset="100%" stop-color="#1a1108"/>
+    </linearGradient>
+    <filter id="cardShadowcard_s" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <g filter="url(#cardShadowcard_s)">
+    <!-- Paper card -->
+    <rect x="10" y="10" width="200" height="240" rx="7" fill="url(#papercard_s)"/>
+    <!-- Top-edge highlight on paper -->
+    <rect x="14" y="13" width="192" height="2" rx="1" fill="#FFFFFF" opacity="0.35"/>
+    <!-- Inset frame for pixel art -->
+    <rect x="22" y="22" width="176" height="176" rx="4" fill="url(#framecard_s)"/>
+    <!-- Top inner shadow on frame -->
+    <rect x="22" y="22" width="176" height="2" fill="#000" opacity="0.45"/>
+  </g>
+</svg>

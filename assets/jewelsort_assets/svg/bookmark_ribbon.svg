@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 140" width="72" height="140">
+  <defs>
+    <linearGradient id="ribbonG" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F4E0B8"/>
+      <stop offset="100%" stop-color="#DCC499"/>
+    </linearGradient>
+    <filter id="ribbonShadow" x="-15%" y="-5%" width="130%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <g filter="url(#ribbonShadow)">
+    <path d="M 0 0 L 72 0 L 72 140 L 36 112 L 0 140 Z" fill="url(#ribbonG)"/>
+    <rect x="0" y="0" width="72" height="6" fill="#000" opacity="0.18"/>
+    <rect x="0" y="0" width="4" height="140" fill="#FFFFFF" opacity="0.4"/>
+    <rect x="68" y="0" width="4" height="140" fill="#000" opacity="0.12"/>
+  </g>
+</svg>

@@ -26,8 +26,12 @@ end
 -- Spawn `count` sparkles originating at (x,y) with the given jewel color.
 -- Spread is biased slightly upward so the glitter reads as floating /
 -- lingering rather than falling off.
-function M:spawn(x, y, color, count)
+-- `layer` ("above" / "behind") decides whether this batch renders on top
+-- of the shelf chrome or under it. Hover-twinkles use "behind" so the
+-- glitter doesn't float over the shelf tray. Default is "above".
+function M:spawn(x, y, color, count, layer)
     count = count or 1
+    layer = layer or "above"
     for _ = 1, count do
         local ang = rand() * math.pi * 2
         local spd = 18 + rand() * 55
@@ -41,6 +45,7 @@ function M:spawn(x, y, color, count)
             max_life = 0.28 + rand() * 0.32,
             size = 1.4 + rand() * 1.6,
             color = color,
+            layer = layer,
         }
     end
 end
@@ -74,6 +79,7 @@ function M:spawn_confetti(x, y, vx0, vy0, spread_rad, palette, count)
             color = { color[1], color[2], color[3] },
             wobble_phase = rand() * math.pi * 2,
             wobble_amp = 18 + rand() * 14,   -- px/s sideways sway
+            layer = "above",
         }
     end
 end
@@ -119,12 +125,19 @@ function M:update(dt)
     end
 end
 
-function M:draw()
+-- `layer` ("above" / "behind") filters which particles to draw. Default
+-- is "above" so existing call sites keep their behavior; the renderer
+-- inserts an extra `:draw("behind")` pass before the shelf so hover
+-- twinkles don't bleed over the tray.
+function M:draw(layer)
+    layer = layer or "above"
     local prev_lw = love.graphics.getLineWidth()
     love.graphics.setLineWidth(1)
     for i = 1, #self.list do
         local p = self.list[i]
-        if p.kind == "confetti" then
+        if (p.layer or "above") ~= layer then
+            -- skip
+        elseif p.kind == "confetti" then
             local u = p.life / p.max_life
             -- Hold full alpha until the last 25% of life, then fade.
             local alpha = 1

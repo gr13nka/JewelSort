@@ -24,7 +24,7 @@ created: 2026-04-14
 | Rendering | 100% procedural — `love.graphics` primitives + baked Canvas panels |
 | Component library | none (see `wood.draw_panel`, `render.draw_cell`, `render.draw_medal`) |
 | Icon library | none — all glyphs are circles, rings, or text |
-| Font | Fredoka One Regular (Google Fonts, SIL OFL) — `assets/fonts/FredokaOne-Regular.ttf` |
+| Font | Alegreya Bold (Huerta Tipográfica, SIL OFL) — `assets/fonts/Alegreya-Bold.ttf`. Humanist serif with full Latin + Cyrillic coverage; Bold weight reads cleanly on painted leather and foil. |
 | Window | 540 × 960 portrait, non-resizable, vsync on (`conf.lua`) |
 | Design space | 1080 × 1920 (2× the window; assume retina) |
 
@@ -78,8 +78,8 @@ touched.
 
 | Role | Size | Font | Where |
 |------|------|------|-------|
-| Body / titles | 32 px | Fredoka One | HUD title, level name, win panel, book titles |
-| Small | 22 px | Fredoka One | Level tile label, box card progress ("3 / 8"), back button, locked-box hint, "Select a book" subtitle |
+| Body / titles | 32 px | Alegreya | HUD title, level name, win panel, book titles |
+| Small | 22 px | Alegreya | Level tile label, box card progress ("3 / 8"), back button, locked-box hint, "Select a book" subtitle |
 
 Only two sizes exist. Do not add a third without updating this file.
 All text uses the `print_engraved` helper: a single-pixel-down black
@@ -204,7 +204,7 @@ from the web build (Fengari on love.js):
 | No recursion in flood-fill | `src/cluster.lua` uses an explicit queue | Code review |
 | No `os.execute`, `io.popen`, FFI, `love.thread`, screen-capture callbacks | All `.lua` | Code review |
 | All filesystem access through `love.filesystem` | All `.lua` | Code review |
-| Only bundled font | `assets/fonts/FredokaOne-Regular.ttf` | `render.lua` FONT_PATH |
+| Only bundled font | `assets/fonts/Alegreya-Bold.ttf` | `render.lua` FONT_PATH |
 | PNG asset dependency kept minimal | Wood/parchment chrome is procedural in `wood.lua`. Permitted PNGs: `levels/*.png` (data), `assets/jewel_slot_8edges.png` (bevelled slot), `assets/Jewel_8edges.png` (faceted gem). No additional image assets without a contract update. | File listing under `assets/` |
 
 Adding a new visual element: **prefer extending `wood.lua`** (new `kind`

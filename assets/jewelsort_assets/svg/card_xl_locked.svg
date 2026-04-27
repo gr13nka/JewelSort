@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 640" width="560" height="640">
+  <defs>
+    <linearGradient id="papercard_xl_locked" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#E5D4B0"/>
+      <stop offset="100%" stop-color="#B8966C"/>
+    </linearGradient>
+    <linearGradient id="framecard_xl_locked" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#5A3F22"/>
+      <stop offset="100%" stop-color="#3D2814"/>
+    </linearGradient>
+    <filter id="cardShadowcard_xl_locked" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <linearGradient id="goldCornercard_xl_locked" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A88848"/>
+      <stop offset="100%" stop-color="#5A4018"/>
+    </linearGradient>
+  </defs>
+  <g filter="url(#cardShadowcard_xl_locked)">
+    <!-- Paper card -->
+    <rect x="14" y="14" width="532" height="612" rx="7" fill="url(#papercard_xl_locked)"/>
+    <!-- Top-edge highlight on paper -->
+    <rect x="18" y="17" width="524" height="2" rx="1" fill="#FFFFFF" opacity="0.35"/>
+    <!-- Inset frame for pixel art -->
+    <rect x="36" y="36" width="488" height="488" rx="4" fill="url(#framecard_xl_locked)"/>
+    <!-- Top inner shadow on frame -->
+    <rect x="36" y="36" width="488" height="2" fill="#000" opacity="0.45"/>
+  </g>
+  <!-- Top-left bracket -->
+  <path d="M 26 26 L 54 26 L 54 32 L 32 32 L 32 54 L 26 54 Z" fill="url(#goldCornercard_xl_locked)" stroke="#3A2810" stroke-width="0.5"/>
+  <!-- Top-right bracket -->
+  <path d="M 534 26 L 506 26 L 506 32 L 528 32 L 528 54 L 534 54 Z" fill="url(#goldCornercard_xl_locked)" stroke="#3A2810" stroke-width="0.5"/>
+  <!-- Bottom-left bracket -->
+  <path d="M 26 614 L 54 614 L 54 608 L 32 608 L 32 586 L 26 586 Z" fill="url(#goldCornercard_xl_locked)" stroke="#3A2810" stroke-width="0.5"/>
+  <!-- Bottom-right bracket -->
+  <path d="M 534 614 L 506 614 L 506 608 L 528 608 L 528 586 L 534 586 Z" fill="url(#goldCornercard_xl_locked)" stroke="#6a4f15" stroke-width="0.5"/>
+
+  <svg x="109" y="109" width="341" height="341" viewBox="0 0 16 16">
+    <g fill="#E5D4B0" shape-rendering="crispEdges">
+      <rect x="5" y="1" width="6" height="1"/>
+      <rect x="4" y="2" width="2" height="1"/>
+      <rect x="10" y="2" width="2" height="1"/>
+      <rect x="3" y="3" width="2" height="1"/>
+      <rect x="11" y="3" width="2" height="1"/>
+      <rect x="11" y="4" width="2" height="1"/>
+      <rect x="10" y="5" width="2" height="1"/>
+      <rect x="9" y="6" width="2" height="1"/>
+      <rect x="8" y="7" width="2" height="1"/>
+      <rect x="7" y="8" width="2" height="4"/>
+      <rect x="7" y="13" width="2" height="2"/>
+    </g>
+    <g fill="#7A5F32" opacity="0.55" shape-rendering="crispEdges">
+      <rect x="11" y="2" width="1" height="1"/>
+      <rect x="12" y="3" width="1" height="1"/>
+      <rect x="12" y="4" width="1" height="1"/>
+      <rect x="11" y="5" width="1" height="1"/>
+      <rect x="10" y="6" width="1" height="1"/>
+      <rect x="9" y="7" width="1" height="1"/>
+      <rect x="8" y="8" width="1" height="4"/>
+      <rect x="8" y="13" width="1" height="2"/>
+    </g>
+  </svg>
+</svg>

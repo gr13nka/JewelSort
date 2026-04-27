@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 76 76" width="76" height="76">
+  <defs>
+    <linearGradient id="starG2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F1CB6E"/>
+      <stop offset="100%" stop-color="#8a6520"/>
+    </linearGradient>
+    <filter id="starShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <g filter="url(#starShadow)">
+    <!-- Dark gold outer ring -->
+    <circle cx="38" cy="38" r="34" fill="#6a4f15"/>
+    <!-- 12 scallop bumps -->
+    <circle cx="38" cy="6"  r="4.5" fill="#6a4f15"/>
+    <circle cx="54" cy="11" r="4.5" fill="#6a4f15"/>
+    <circle cx="65" cy="22" r="4.5" fill="#6a4f15"/>
+    <circle cx="70" cy="38" r="4.5" fill="#6a4f15"/>
+    <circle cx="65" cy="54" r="4.5" fill="#6a4f15"/>
+    <circle cx="54" cy="65" r="4.5" fill="#6a4f15"/>
+    <circle cx="38" cy="70" r="4.5" fill="#6a4f15"/>
+    <circle cx="22" cy="65" r="4.5" fill="#6a4f15"/>
+    <circle cx="11" cy="54" r="4.5" fill="#6a4f15"/>
+    <circle cx="6"  cy="38" r="4.5" fill="#6a4f15"/>
+    <circle cx="11" cy="22" r="4.5" fill="#6a4f15"/>
+    <circle cx="22" cy="11" r="4.5" fill="#6a4f15"/>
+    <!-- Gold face -->
+    <circle cx="38" cy="38" r="29" fill="url(#starG2)"/>
+    <ellipse cx="30" cy="28" rx="9" ry="6" fill="#F1CB6E" opacity="0.6"/>
+    <!-- Inner darker ring -->
+    <circle cx="38" cy="38" r="22" fill="none" stroke="#8a6520" stroke-width="1.5"/>
+    <!-- 5-point star -->
+    <polygon points="38,19 42.5,32 56,32 45,40 49,53 38,45 27,53 31,40 20,32 33.5,32" fill="#7A5518"/>
+    <polygon points="38,19 39.7,25 42.5,32 38,32" fill="#F1CB6E" opacity="0.5"/>
+  </g>
+</svg>

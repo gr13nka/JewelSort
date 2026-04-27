@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 76 76" width="76" height="76">
+  <defs>
+    <linearGradient id="lockBody" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#6e6e6e"/>
+      <stop offset="50%" stop-color="#3a3a3a"/>
+      <stop offset="100%" stop-color="#1f1f1f"/>
+    </linearGradient>
+    <filter id="lockShadow" x="-10%" y="-5%" width="120%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <g filter="url(#lockShadow)">
+    <!-- shackle -->
+    <path d="M 22 35 L 22 26 a 16 16 0 0 1 32 0 L 54 35"
+          stroke="#a8a8a8" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M 22 35 L 22 26 a 16 16 0 0 1 32 0 L 54 35"
+          stroke="#3a3a3a" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.5"/>
+    <!-- body -->
+    <rect x="14" y="34" width="48" height="32" rx="6" fill="url(#lockBody)" stroke="#1a1a1a" stroke-width="2"/>
+    <!-- top edge highlight -->
+    <rect x="18" y="36" width="40" height="2" fill="#FFFFFF" opacity="0.25"/>
+    <!-- keyhole -->
+    <circle cx="38" cy="48" r="3" fill="#1a1a1a"/>
+    <rect x="36.5" y="50" width="3" height="6" fill="#1a1a1a"/>
+    <!-- horizontal embossed line -->
+    <line x1="20" y1="60" x2="56" y2="60" stroke="#FFFFFF" opacity="0.08" stroke-width="1"/>
+  </g>
+</svg>
