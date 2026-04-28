@@ -1446,7 +1446,7 @@ local function draw_box_card(menu, progression, box, i, win_w)
     use_small()
     if unlocked then
         love.graphics.setColor(P.ink_light[1], P.ink_light[2], P.ink_light[3], 0.95)
-        love.graphics.printf(done .. " / " .. total, title_x, y + h - 40, title_w, "left")
+        love.graphics.printf(done .. " / " .. total, title_x, y + 62, title_w, "left")
     else
         love.graphics.setColor(P.ink_light[1], P.ink_light[2], P.ink_light[3], 0.85)
         love.graphics.printf(
@@ -1611,10 +1611,11 @@ local function draw_level_tile(menu, progression, thumbnails, box, i, win_w)
     local frame = CARD_FRAME[size] or CARD_FRAME.m
 
     local completed = progression.is_puzzle_completed(menu.progress, p.id)
-    -- Per-level locking is out of scope for this pass; every visible
-    -- card is unlocked. The locked card variant is loadable via
-    -- card_image(size, true) when per-level gating lands.
-    local locked = false
+    -- Unsolved puzzles wear the "?" locked-card asset so the inner pixel-art
+    -- preview doesn't spoil the picture. Tapping is not gated by `locked`
+    -- (only per-box gating exists in menu.lua), so a "locked" card still
+    -- accepts taps and starts the puzzle.
+    local locked = not completed
 
     -- Press-scale wrap (so press feedback survives sway).
     local press_scale = menu:press_scale_for("level", i)
