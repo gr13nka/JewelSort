@@ -379,6 +379,17 @@ function love.load(args)
                 local n = tonumber(args[i + 1])
                 if n then game.dev.quit_after = n end
             end
+            if args[i] == "--make-card-thumbs" then
+                -- One-shot tool: render polaroid card PNGs (body +
+                -- inner thumbnail + pushpin) for each puzzle, save to
+                -- assets/card_thumbs/, then quit. The Lovkit2d editor
+                -- uses these PNGs as drag sources when authoring
+                -- screens/<book>.ui.json layouts.
+                local make_card_thumbs = require("tools.make_card_thumbs")
+                make_card_thumbs.run(game.boxes, game.descriptors, game.thumbnails)
+                love.event.quit()
+                return
+            end
         end
     end
     if game.dev.auto_win then

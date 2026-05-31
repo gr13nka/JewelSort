@@ -240,6 +240,13 @@ end
 -- are centered horizontally. y origin is the top of the first row
 -- (no scroll applied here — scroll is added at lookup time in
 -- :layout_level_tile so we can scissor the page rect cleanly).
+--
+-- Override path: if screens/<book_id>.ui.json exists (authored in the
+-- Lovkit2d editor — see CLAUDE.md → "Authoring book layouts"), each
+-- card's position, size, rotation, and pivot are read from that file
+-- instead of the greedy packer. The JSON-supplied rects are scaled
+-- from the editor's screen.w/screen.h frame onto the actual parchment
+-- page rect, preserving aspect.
 function M:_ensure_levels_layout(win_w)
     local cached = self._level_layout[self.selected_box]
     if cached ~= nil and cached.win_w == win_w then return cached end
@@ -256,6 +263,36 @@ function M:_ensure_levels_layout(win_w)
     local rects = {}
     if box == nil or box.puzzles == nil or inner_w <= 0 then
         local out = { win_w = win_w, rects = rects, content_h = 0,
+                      page_x = px, page_y = py, page_w = pw }
+        self._level_layout[self.selected_box] = out
+        return out
+    end
+
+    -- Hand-authored layout, if any. Falls through to the greedy packer
+    -- below when no file exists or the file fails to parse.
+    local book_layout = require("src.book_layout")
+    local hand = book_layout.load(box.id, box.puzzles)
+    if hand ~= nil then
+        -- Scale factor from JSON frame to actual page width. Aspect is
+        -- preserved because the parchment page (page_w × page_h in the
+        -- LAYOUT table) and the editor stage are expected to match.
+        local s = pw / hand.screen_w
+        for i = 1, #box.puzzles do
+            local r = hand.rects[i]
+            if r ~= nil then
+                rects[i] = {
+                    px + r[1] * s,
+                    py + r[2] * s,
+                    r[3] * s,
+                    r[4] * s,
+                    r[5],   -- rotation (radians)
+                    r[6],   -- pivot.x (normalized 0..1)
+                    r[7],   -- pivot.y
+                }
+            end
+        end
+        local content_h = hand.content_h * s + L.page_pad_y
+        local out = { win_w = win_w, rects = rects, content_h = content_h,
                       page_x = px, page_y = py, page_w = pw }
         self._level_layout[self.selected_box] = out
         return out
@@ -305,12 +342,15 @@ end
 
 -- Returns the on-screen rect (post-scroll) of the i-th puzzle on the
 -- current levels page. The unshifted rect comes from the cached row
--- pack; we apply self.scroll to y at lookup time.
+-- pack; we apply self.scroll to y at lookup time. Trailing returns
+-- (rotation, pivot_x, pivot_y) are non-nil only for hand-authored
+-- layouts — the greedy packer leaves them nil so callers fall back to
+-- the deterministic visuals from _ensure_visuals.
 function M:layout_level_tile(i, win_w)
     local layout = self:_ensure_levels_layout(win_w)
     local r = layout.rects[i]
     if r == nil then return 0, 0, 0, 0 end
-    return r[1], r[2] - self.scroll, r[3], r[4]
+    return r[1], r[2] - self.scroll, r[3], r[4], r[5], r[6], r[7]
 end
 
 -- Total content height (for scroll clamping) and the visible page rect.

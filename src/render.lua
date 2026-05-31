@@ -1593,6 +1593,67 @@ local function draw_tape_strip(cx, cy, length, angle_rad)
     love.graphics.pop()
 end
 
+-- Card body + inner pixel-art thumbnail. Shared between draw_level_tile
+-- (which wraps the call in the sway transform) and tools/make_card_thumbs.lua
+-- (which renders straight to a Canvas for export). Both paths must produce
+-- the same pixels for the editor preview to match in-game; if you change
+-- this, regenerate assets/card_thumbs/.
+local function draw_card_body_and_thumb(size, x, y, w, h, thumb, locked)
+    local card_img = card_image(size, locked)
+    if card_img ~= nil then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(card_img, x, y, 0, 0.5, 0.5)
+    else
+        -- Fallback: cream rectangle so the card never disappears if the
+        -- asset is missing during development.
+        love.graphics.setColor(0.95, 0.92, 0.84, 1)
+        love.graphics.rectangle("fill", x, y, w, h, 6, 6)
+    end
+
+    if not locked and thumb ~= nil then
+        local frame = CARD_FRAME[size] or CARD_FRAME.m
+        local fx = x + frame.x
+        local fy = y + frame.y
+        local fw = frame.w
+        local fh = frame.h
+        local tw, th = thumb:getDimensions()
+        local scale = math.min(fw / tw, fh / th)
+        if scale <= 0 then scale = 1 end
+        local dw = tw * scale
+        local dh = th * scale
+        local dx = fx + (fw - dw) / 2
+        local dy = fy + (fh - dh) / 2
+        local prev_min, prev_mag = thumb:getFilter()
+        thumb:setFilter("nearest", "nearest")
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(thumb, dx, dy, 0, scale, scale)
+        thumb:setFilter(prev_min, prev_mag)
+    end
+end
+
+-- Pushpin centered above the card top edge. Same shape used both
+-- in-game and in editor thumbnails.
+local function draw_card_pushpin(x, y, w, pushpin_color)
+    local pin = pushpin_image(pushpin_color)
+    if pin == nil then return end
+    local pw, ph = pin:getDimensions()
+    local pin_w, pin_h = 22, 22
+    local pin_sx = pin_w / pw
+    local pin_sy = pin_h / ph
+    local px = x + w / 2 - pin_w / 2
+    local py = y - pin_h * 0.35
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(pin, px, py, 0, pin_sx, pin_sy)
+end
+
+-- Public helper: draw a complete static card (body + thumbnail + pushpin)
+-- at (x, y, w, h) with no rotation, no sway, no press-scale. Used by the
+-- card-thumbnail generator to produce drag sources for the Lovkit2d editor.
+function M.draw_card_static(size, x, y, w, h, thumb, pushpin_color)
+    draw_card_body_and_thumb(size, x, y, w, h, thumb, false)
+    draw_card_pushpin(x, y, w, pushpin_color)
+end
+
 -- Draw one pinned-polaroid level card on the parchment book page.
 -- Card variant (S/M/L/XL) is determined by menu.lua from the level's
 -- bbox dims; the inner pixel-art thumbnail is composited into the
@@ -1602,13 +1663,15 @@ end
 -- advertise tappability.
 local function draw_level_tile(menu, progression, thumbnails, box, i, win_w)
     local p = box.puzzles[i]
-    local x, y, w, h = menu:layout_level_tile(i, win_w)
+    -- Trailing returns are non-nil only for hand-authored layouts (see
+    -- src/book_layout.lua + menu:layout_level_tile). When nil, fall back
+    -- to the deterministic per-puzzle visuals.
+    local x, y, w, h, layout_rot, layout_pvx, layout_pvy = menu:layout_level_tile(i, win_w)
     if w <= 0 or h <= 0 then return end
     local v = menu:level_visuals(menu.selected_box, i)
     if v == nil then v = { size = "m", pushpin = "red", rotation = 0,
                            sway_phase = 0, sway_speed = 1.4 } end
     local size = v.size
-    local frame = CARD_FRAME[size] or CARD_FRAME.m
 
     local completed = progression.is_puzzle_completed(menu.progress, p.id)
     -- Unsolved puzzles wear the "?" locked-card asset so the inner pixel-art
@@ -1625,7 +1688,10 @@ local function draw_level_tile(menu, progression, thumbnails, box, i, win_w)
     -- Sway: gentle rotation + vertical bob on a per-card phase, pivoting
     -- near the pushpin (top 20% of the card) so the polaroid reads as
     -- hanging from a pin. Locked cards skip motion (per asset README).
-    local rot = v.rotation or 0
+    -- Hand-authored rotation (when present) replaces the deterministic
+    -- random tilt; sway is still added so the card breathes.
+    local base_rot = (layout_rot ~= nil) and layout_rot or (v.rotation or 0)
+    local rot = base_rot
     local bob = 0
     if not locked then
         local t = (love and love.timer and love.timer.getTime() or 0)
@@ -1633,52 +1699,27 @@ local function draw_level_tile(menu, progression, thumbnails, box, i, win_w)
         bob = math.sin(t * v.sway_speed + v.sway_phase) * 1.5
     end
 
-    -- Pivot: top-center of card (where the pushpin lives).
-    local pivot_x = x + w / 2
-    local pivot_y = y + h * 0.2
+    -- Pivot: hand-authored when the layout supplies one, else top-center
+    -- of card (where the pushpin lives, so the polaroid hangs naturally).
+    local pivot_x, pivot_y
+    if layout_pvx ~= nil and layout_pvy ~= nil then
+        pivot_x = x + w * layout_pvx
+        pivot_y = y + h * layout_pvy
+    else
+        pivot_x = x + w / 2
+        pivot_y = y + h * 0.2
+    end
     love.graphics.push()
     love.graphics.translate(pivot_x, pivot_y + bob)
     love.graphics.rotate(rot)
     love.graphics.translate(-pivot_x, -pivot_y)
 
-    -- Card body (PNG asset @ 0.5x). The asset's painted shadow already
-    -- sits inside its bounds, so no extra drop-shadow draw needed.
-    local card_img = card_image(size, locked)
-    if card_img ~= nil then
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(card_img, x, y, 0, 0.5, 0.5)
-    else
-        -- Fallback: cream rectangle so the card never disappears if the
-        -- asset is missing during development.
-        love.graphics.setColor(0.95, 0.92, 0.84, 1)
-        love.graphics.rectangle("fill", x, y, w, h, 6, 6)
-    end
-
-    -- Inner pixel-art thumbnail (only on unlocked cards — locked variants
-    -- bake the "?" into the asset).
-    if not locked then
-        local thumb = thumbnails and thumbnails[p.id] or nil
-        if thumb ~= nil then
-            -- Frame coords are in 1x display space relative to card top-left.
-            local fx = x + frame.x
-            local fy = y + frame.y
-            local fw = frame.w
-            local fh = frame.h
-            local tw, th = thumb:getDimensions()
-            -- Fit-largest-side, integer-snap so puzzle pixels stay square.
-            local scale = math.min(fw / tw, fh / th)
-            if scale <= 0 then scale = 1 end
-            local dw = tw * scale
-            local dh = th * scale
-            local dx = fx + (fw - dw) / 2
-            local dy = fy + (fh - dh) / 2
-            local prev_min, prev_mag = thumb:getFilter()
-            thumb:setFilter("nearest", "nearest")
-            love.graphics.setColor(1, 1, 1, 1)
-            love.graphics.draw(thumb, dx, dy, 0, scale, scale)
-            thumb:setFilter(prev_min, prev_mag)
-        end
-    end
+    -- Card body + inner thumbnail (shared with the editor-thumbnail
+    -- generator via draw_card_body_and_thumb). The asset's painted
+    -- shadow already sits inside its bounds, so no extra drop-shadow
+    -- draw needed.
+    local thumb = thumbnails and thumbnails[p.id] or nil
+    draw_card_body_and_thumb(size, x, y, w, h, thumb, locked)
 
     -- Completion star — only for unlocked + completed.
     if completed and not locked then
@@ -1688,8 +1729,14 @@ local function draw_level_tile(menu, progression, thumbnails, box, i, win_w)
             local sw, sh = star:getDimensions()
             local s = target / math.max(sw, sh)
             -- Top-right corner, slightly overlapping the card edge.
+            -- sy sits the star center just below the card top so the
+            -- medal reads as pinned ON the polaroid, not floating above
+            -- it — at -0.25*target it only kissed the frame top line.
+            -- Size 's' cards have a tighter top margin and the star
+            -- read as floating above the frame, so it rides 4× lower.
+            local sy_factor = (size == "s") and 0.32 or -0.08
             local sx = x + w - target * 0.7
-            local sy = y - target * 0.25
+            local sy = y + target * sy_factor
             love.graphics.setColor(1, 1, 1, 1)
             love.graphics.draw(star, sx, sy, math.rad(15), s, s, sw / 2, sh / 2)
         end
@@ -1698,19 +1745,9 @@ local function draw_level_tile(menu, progression, thumbnails, box, i, win_w)
     love.graphics.pop() -- end sway transform
 
     -- Pushpin sits OUTSIDE the sway transform so it reads as fixed to
-    -- the page; the card swings under it. 22x22 display, centered above
-    -- the card top edge.
-    local pin = pushpin_image(v.pushpin)
-    if pin ~= nil then
-        local pw, ph = pin:getDimensions()
-        local pin_w, pin_h = 22, 22
-        local pin_sx = pin_w / pw
-        local pin_sy = pin_h / ph
-        local px = x + w / 2 - pin_w / 2
-        local py = y - pin_h * 0.35
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(pin, px, py, 0, pin_sx, pin_sy)
-    end
+    -- the page; the card swings under it. Shared with the editor-thumbnail
+    -- generator via draw_card_pushpin.
+    draw_card_pushpin(x, y, w, v.pushpin)
 
     -- Press scrim (drawn after sway/pop, in card-local rect).
     local oa = menu:press_overlay_alpha_for("level", i)
@@ -1743,9 +1780,10 @@ local function draw_back_button(menu)
     end
     use_small()
     -- Vertically centre "Back" / "Назад" inside the wooden pill. Small
-    -- font is 22 px tall in our setup; ~y+10 looks correct for a 40 px
-    -- pill (asset baseline sits a touch above geometric center).
-    print_engraved(i18n.t("back"), bx, by + 8, bw, "center", P.ink_light, 0.4)
+    -- font is 22 px tall in our setup; the asset baseline sits well
+    -- above geometric center, so the label needs to ride high in the
+    -- 40 px pill to look optically centered.
+    print_engraved(i18n.t("back"), bx, by + 4, bw, "center", P.ink_light, 0.4)
     use_body()
     local oa = menu:press_overlay_alpha_for("back", 0)
     if oa > 0 then

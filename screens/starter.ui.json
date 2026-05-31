@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "screen": { "w": 510, "h": 830 },
+  "root": {
+    "id": "root",
+    "type": "container",
+    "rect": { "x": 0, "y": 0, "w": 510, "h": 830 },
+    "children": [
+      {
+        "id": "starter__smile",
+        "type": "image",
+        "image": "assets/card_thumbs/starter__smile.png",
+        "rect": { "x": 80, "y": 80, "w": 110, "h": 130 },
+        "rotation": -0.14,
+        "pivot": { "x": 0.5, "y": 0.2 }
+      },
+      {
+        "id": "starter__heart",
+        "type": "image",
+        "image": "assets/card_thumbs/starter__heart.png",
+        "rect": { "x": 280, "y": 260, "w": 110, "h": 130 },
+        "rotation": 0.11,
+        "pivot": { "x": 0.5, "y": 0.2 }
+      }
+    ]
+  }
+}

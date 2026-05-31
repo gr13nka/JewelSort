@@ -184,6 +184,72 @@ alive**, so:
 - **Single `rAF` loop**, canceled in `Module.setStatus('')` when
   `remainingDependencies === 0`. Don't leak it past the teardown.
 
+## Authoring book layouts (Lovkit2d editor)
+
+Each book's parchment page is laid out by either:
+
+1. The **greedy row packer** in `src/menu.lua:_ensure_levels_layout` —
+   default, runs when no layout file exists. Cards wrap into rows in
+   `boxes.lua` order, with deterministic ±0.05 rad random tilt per
+   puzzle id.
+2. A **hand-authored layout** at `screens/<book_id>.ui.json`, exported
+   from the Lovkit2d editor (`~/Documents/Lovkit2d/editor/`). Per-card
+   position, size, rotation, and rotation pivot all come from the JSON.
+
+The runtime auto-detects which is in play: presence of
+`screens/<book_id>.ui.json` flips that book to the hand-authored path.
+See `screens/starter.ui.json` for a worked example.
+
+### Workflow
+
+1. **Refresh card thumbnails** (only after card visuals change, or on
+   first run): `love . --make-card-thumbs` — writes
+   `assets/card_thumbs/<book>__<puzzle>.png` for every puzzle in
+   `levels/boxes.lua`. These are the drag sources for the editor;
+   they reuse `render.draw_card_static` so the editor preview is
+   byte-identical to the in-game card.
+2. **Open the editor**: `~/Documents/Lovkit2d/editor/index.html` in
+   Chrome (File System Access API requires Chromium). Click "Open
+   folder" and select the JewelSort repo root.
+3. **Pick or create a screen** named exactly after the book id
+   (`starter`, `forest`, `animals`). Set `screen.w/h` to **510×830**
+   (the canonical parchment page size) via the right-side Stage panel
+   — the runtime scales the layout to the actual page width on render.
+4. **Drag thumbnails** from the left palette onto the stage. The
+   editor sets each element's `id` from the asset filename — e.g.
+   `starter__smile`. Element ids must match a `puzzle.id` from
+   `boxes.lua` *after the loader unmangles* `__` → `/`. Don't rename
+   them.
+5. **Position, rotate, set pivot.** The rotation handle is the
+   blue disc above the top edge; Shift snaps to 1°. Drag the cyan
+   pivot dot to move the rotation pivot (Alt snaps it back to center).
+6. **Export JSON** — writes to `screens/<book_id>.ui.json` at the repo
+   root.
+7. **Verify**: `love .`, open the book, confirm the cards land where
+   you placed them.
+
+### Schema + invariants
+
+- The editor speaks UI-Schema v2 (see
+  `~/Documents/Lovkit2d/schema/ui.schema.md`). v1 is read-compatible
+  (zero rotation, center pivot defaulted in).
+- **Element id mangling**: editor ids forbid `/`, but puzzle ids use
+  `/`. The pipeline mangles via `__`:
+  `starter/smile` ⇄ `starter__smile`. Both `tools/make_card_thumbs.lua`
+  (filename) and `src/book_layout.lua` (id-to-puzzle mapping) follow
+  this rule. If you add a third id-mangling site, sync all three.
+- **Coordinate frame**: the JSON's `screen.w/h` defines the authoring
+  frame. JewelSort scales by `pw / screen.w` to fit the actual
+  parchment page; aspect is preserved (the page is 510×830 wide-aspect
+  on every viewport).
+- **Sway still applies** on top of hand-authored rotation: the runtime
+  adds the per-frame sway oscillation to whatever base rotation the
+  JSON specified, so cards still breathe.
+- **Pushpins, sway phase, sway speed** are still derived from the
+  puzzle id (`menu._ensure_visuals`) — they're not in the layout file.
+- **Locked cards** (uncompleted) still wear the "?" asset; the editor
+  thumbnails always show the unlocked variant for clarity.
+
 ## UI / visuals
 
 Full contract in **`UI-SPEC.md`** at the repo root — font sizes,
